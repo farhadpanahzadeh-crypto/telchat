@@ -1,0 +1,48 @@
+plugins {
+    id 'com.android.application'
+}
+
+// آدرس سرور را می‌توان هنگام ساخت داد: gradle assembleRelease -PserverUrl=https://chat.example.ir/
+def serverUrl = project.findProperty('serverUrl') ?: ''
+def appName = project.findProperty('appName') ?: 'تل‌چت'
+
+android {
+    namespace 'ir.telchat.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'ir.telchat.app'
+        minSdk 23
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+        buildConfigField 'String', 'SERVER_URL', "\"${serverUrl}\""
+        resValue 'string', 'app_name', appName
+    }
+
+    signingConfigs {
+        release {
+            def ks = System.getenv('TELCHAT_KEYSTORE') ?: '../telchat.keystore'
+            storeFile file(ks)
+            storePassword System.getenv('TELCHAT_KEYSTORE_PASSWORD') ?: 'telchat123'
+            keyAlias System.getenv('TELCHAT_KEY_ALIAS') ?: 'telchat'
+            keyPassword System.getenv('TELCHAT_KEY_PASSWORD') ?: 'telchat123'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}

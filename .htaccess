@@ -1,0 +1,34 @@
+# تل‌چت — تنظیمات Apache / LiteSpeed (cPanel)
+Options -Indexes
+DirectoryIndex index.html index.php
+
+# انتقال هدر Authorization در هاست‌هایی که آن را حذف می‌کنند
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTP:Authorization} .
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>
+
+# فایل‌های حساس قابل دانلود نیستند
+<FilesMatch "\.(sqlite|sqlite-wal|sqlite-shm|log|md|sh)$">
+  Require all denied
+</FilesMatch>
+
+AddType application/manifest+json .webmanifest
+AddType font/woff2 .woff2
+AddType application/vnd.android.package-archive .apk
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "same-origin"
+  <FilesMatch "^(sw\.js|index\.html|manifest\.webmanifest)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+  <FilesMatch "\.(css|js|woff2|png)$">
+    Header set Cache-Control "public, max-age=604800"
+  </FilesMatch>
+</IfModule>
+
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json image/svg+xml application/manifest+json
+</IfModule>

@@ -1,0 +1,14 @@
+# هیچ اسکریپتی در پوشه آپلود اجرا نمی‌شود
+Options -Indexes -ExecCGI
+RemoveHandler .php .phtml .php3 .php4 .php5 .php7 .php8 .phar .pl .py .cgi .sh
+RemoveType .php .phtml .php3 .php4 .php5 .php7 .php8 .phar
+<FilesMatch "\.(?i:php\d*|phtml|phar|pl|py|cgi|sh|shtml|html?|svg|js)$">
+  Require all denied
+</FilesMatch>
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header set Cache-Control "public, max-age=31536000, immutable"
+  <FilesMatch "\.(?i:bin|txt|json|csv|zip|rar|7z|tar|gz|pdf|doc|docx|xls|xlsx|ppt|pptx|odt|ods|rtf|apk)$">
+    Header set Content-Disposition "attachment"
+  </FilesMatch>
+</IfModule>
