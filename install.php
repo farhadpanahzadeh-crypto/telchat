@@ -108,7 +108,7 @@ if (!$installed && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 'allow_registration' => !empty($_POST['allow_registration']),
                 'register_code' => trim($_POST['register_code'] ?? ''),
                 'poll_timeout' => 20,
-                'max_upload_mb' => max(1, (int) ($_POST['max_upload_mb'] ?? 50)),
+                'max_upload_mb' => max(1, (int) ($_POST['max_upload_mb'] ?? 200)),
             ];
             $php = "<?php\n// تنظیمات تل‌چت — این فایل توسط نصب‌کننده ساخته شده است\nreturn " . var_export($config, true) . ";\n";
             if (file_put_contents($configFile, $php) === false) {
@@ -208,7 +208,7 @@ code{background:#f1f3f5;padding:1px 6px;border-radius:6px;direction:ltr;display:
         <label>ایمیل مدیر</label>
         <input name="email" type="email" value="<?= h($_POST['email'] ?? '') ?>">
         <label>حداکثر حجم فایل (مگابایت)</label>
-        <input name="max_upload_mb" type="number" value="<?= h($_POST['max_upload_mb'] ?? '50') ?>">
+        <input name="max_upload_mb" type="number" value="<?= h($_POST['max_upload_mb'] ?? '200') ?>">
         <label><input type="checkbox" name="allow_registration" value="1" <?= ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' || !empty($_POST['allow_registration']) ? 'checked' : '' ?>> ثبت‌نام آزاد کاربران فعال باشد</label>
         <label>کد دعوت برای ثبت‌نام (اختیاری — اگر پر شود فقط کسانی که کد را دارند ثبت‌نام می‌کنند)</label>
         <input name="register_code" value="<?= h($_POST['register_code'] ?? '') ?>">

@@ -94,6 +94,9 @@ const ERRORS = {
   registration_closed: 'ثبت‌نام بسته است',
   invalid_register_code: 'کد دعوت نادرست است',
   file_too_large: 'حجم فایل بیش از حد مجاز است',
+  chunk_too_large: 'محدودیت آپلود PHP روی هاست خیلی کم است',
+  invalid_upload: 'آپلود ناموفق بود؛ دوباره تلاش کنید',
+  upload_failed: 'آپلود ناموفق بود؛ دوباره تلاش کنید',
   user_blocked_you: 'این کاربر شما را مسدود کرده است',
   you_blocked_user: 'شما این کاربر را مسدود کرده‌اید',
   privacy_restricted: 'تنظیمات حریم خصوصی این کاربر اجازه افزودن به گروه را نمی‌دهد',
@@ -138,25 +141,55 @@ const API = {
     }
     return j;
   },
-  upload(file, extra = {}, onProgress = null, action = 'files.upload') {
+  post(action, fd, onProgress) {
     return new Promise((resolve, reject) => {
-      const fd = new FormData();
-      fd.append('file', file, file.name || 'file');
-      Object.entries(extra).forEach(([k, v]) => fd.append(k, v));
       const x = new XMLHttpRequest();
       x.open('POST', this.base + action);
       x.setRequestHeader('X-Auth-Token', App.token);
-      x.upload.onprogress = (e) => e.lengthComputable && onProgress && onProgress(e.loaded / e.total);
+      x.timeout = 120000;
+      x.upload.onprogress = (e) => e.lengthComputable && onProgress && onProgress(e.loaded);
       x.onload = () => {
         try {
           const j = JSON.parse(x.responseText);
-          j.error ? reject(new Error(j.error)) : resolve(j);
+          j.error ? reject(Object.assign(new Error(j.error), { final: true })) : resolve(j);
         } catch { reject(new Error(x.status === 413 ? 'file_too_large' : 'network')); }
       };
-      x.onerror = () => reject(new Error('network'));
+      x.onerror = x.ontimeout = () => reject(new Error('network'));
       x.send(fd);
-      if (extra.__xhr) extra.__xhr(x);
     });
+  },
+  upload(file, extra = {}, onProgress = null, action = 'files.upload') {
+    const chunk = App.cfg.chunk_size || 1048576;
+    if (action === 'files.upload' && file.size > chunk) return this.uploadChunked(file, extra, onProgress, chunk);
+    const fd = new FormData();
+    fd.append('file', file, file.name || 'file');
+    Object.entries(extra).forEach(([k, v]) => fd.append(k, v));
+    return this.post(action, fd, (n) => onProgress && onProgress(n / file.size));
+  },
+  /** آپلود تکه‌تکه فایل‌های بزرگ؛ در صورت قطع اینترنت از همان نقطه ادامه می‌دهد */
+  async uploadChunked(file, extra, onProgress, chunk) {
+    const id = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
+    let offset = 0, fails = 0;
+    for (;;) {
+      const fd = new FormData();
+      fd.append('upload_id', id);
+      fd.append('size', file.size);
+      fd.append('offset', offset);
+      fd.append('name', file.name || 'file');
+      fd.append('type', file.type || '');
+      Object.entries(extra).forEach(([k, v]) => fd.append(k, v));
+      fd.append('chunk', file.slice(offset, offset + chunk), 'chunk');
+      try {
+        const r = await this.post('files.chunk', fd, (n) => onProgress && onProgress(Math.min(1, (offset + n) / file.size)));
+        if (r.file) return r;
+        offset = r.next_offset;
+        fails = 0;
+      } catch (e) {
+        if (e.final || ++fails > 8) throw e;
+        await sleep(Math.min(15000, 1500 * fails));
+        try { const r = await this.post('files.chunk', (() => { const f = new FormData(); f.append('upload_id', id); f.append('size', file.size); f.append('offset', -1); return f; })()); offset = r.next_offset ?? offset; } catch { /* retry */ }
+      }
+    }
   },
 };
 
@@ -1522,7 +1555,7 @@ async function sendFiles(files, kind = '') {
   if (caption) { input.value = ''; autoGrow(); updateSendBtn(); delete App.drafts[chatId]; }
   const reply = App.reply;
   cancelBar();
-  const maxMb = App.cfg.max_upload_mb || 50;
+  const maxMb = App.cfg.max_upload_mb || 200;
   for (let file of files) {
     if (file.size > maxMb * 1048576) { toast(ERRORS.file_too_large + ' (حداکثر ' + faNum(maxMb) + ' مگابایت)'); continue; }
     if (!kind) file = await compressImage(file);

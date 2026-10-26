@@ -464,11 +464,18 @@ function store_upload(array $f, int $userId, array $meta = []): array
         $code = $f['error'] ?? 0;
         throw new ApiError(in_array($code, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true) ? 'file_too_large' : 'upload_failed');
     }
+    return store_file($f['tmp_name'], (string) $f['name'], (int) $f['size'], (string) ($f['type'] ?? ''), $userId, $meta, true);
+}
+
+/** ذخیره فایل (آپلود عادی یا فایل سرهم‌شده از تکه‌ها) در پوشه uploads */
+function store_file(string $tmp, string $origName, int $size, string $clientType, int $userId, array $meta, bool $uploaded): array
+{
     $max = (int) config('max_upload_mb') * 1024 * 1024;
-    if ($f['size'] > $max) {
+    if ($size > $max) {
         throw new ApiError('file_too_large');
     }
-    $name = str_limit(basename(str_replace('\\', '/', (string) $f['name'])), 200) ?: 'file';
+    $f = ['tmp_name' => $tmp, 'type' => $clientType, 'size' => $size];
+    $name = str_limit(basename(str_replace('\\', '/', $origName)), 200) ?: 'file';
     $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
     $mime = 'application/octet-stream';
     if (function_exists('finfo_open')) {
@@ -492,7 +499,7 @@ function store_upload(array $f, int $userId, array $meta = []): array
         throw new ApiError('upload_dir_not_writable', 500);
     }
     $file = bin2hex(random_bytes(16)) . '.' . $ext;
-    if (!move_uploaded_file($f['tmp_name'], "$dir/$file")) {
+    if (!($uploaded ? move_uploaded_file($tmp, "$dir/$file") : rename($tmp, "$dir/$file"))) {
         throw new ApiError('upload_failed', 500);
     }
     @chmod("$dir/$file", 0644);
@@ -626,6 +633,7 @@ function act_config(array $in): array
         'register_code' => (string) (config('register_code') ?? '') !== '',
         'vapid_public' => config('vapid')['public'] ?? '',
         'max_upload_mb' => (int) config('max_upload_mb'),
+        'chunk_size' => chunk_size(),
         'reactions' => REACTIONS,
     ];
 }
@@ -1359,6 +1367,94 @@ function act_messages_search(array $in): array
 }
 
 /* ============================== آپلود ============================== */
+
+/** پوشه موقت تکه‌های آپلود (داخل inc که دسترسی وب به آن بسته است) */
+function chunk_dir(): string
+{
+    $dir = APP_ROOT . '/inc/data/chunks';
+    if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+        throw new ApiError('upload_dir_not_writable', 500);
+    }
+    if (mt_rand(1, 30) === 1) {
+        foreach (glob("$dir/*.part") ?: [] as $old) {
+            if (filemtime($old) < time() - 86400) {
+                @unlink($old);
+            }
+        }
+    }
+    return $dir;
+}
+
+/** حجم هر تکه بر اساس محدودیت PHP روی این هاست */
+function chunk_size(): int
+{
+    $toBytes = function ($v): int {
+        $v = trim((string) $v);
+        if ($v === '' || $v === '-1' || $v === '0') {
+            return PHP_INT_MAX;
+        }
+        $n = (float) $v;
+        switch (strtolower(substr($v, -1))) {
+            case 'g': $n *= 1024;
+            // no break
+            case 'm': $n *= 1024;
+            // no break
+            case 'k': $n *= 1024;
+        }
+        return (int) $n;
+    };
+    $limit = min($toBytes(ini_get('upload_max_filesize')), $toBytes(ini_get('post_max_size')));
+    return max(256 * 1024, min(8 * 1024 * 1024, $limit - 64 * 1024));
+}
+
+/**
+ * آپلود تکه‌تکه برای فایل‌های بزرگ (تا سقف max_upload_mb) بدون وابستگی به محدودیت آپلود PHP هاست.
+ * کلاینت هر تکه را با offset می‌فرستد؛ در صورت قطعی، از همان offset ادامه می‌دهد.
+ */
+function act_files_chunk(array $in): array
+{
+    $me = uid();
+    $id = (string) ($_POST['upload_id'] ?? '');
+    if (!preg_match('/^[a-f0-9]{32}$/', $id)) {
+        throw new ApiError('invalid_upload');
+    }
+    $total = (int) ($_POST['size'] ?? 0);
+    $offset = (int) ($_POST['offset'] ?? -1);
+    if ($total <= 0 || $total > (int) config('max_upload_mb') * 1024 * 1024) {
+        throw new ApiError('file_too_large');
+    }
+    $part = chunk_dir() . "/{$me}_{$id}.part";
+    clearstatcache();
+    $have = is_file($part) ? filesize($part) : 0;
+    if ($offset !== $have) {
+        return ['next_offset' => $have];
+    }
+    $c = $_FILES['chunk'] ?? null;
+    if (!$c || ($c['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        throw new ApiError(($c['error'] ?? 0) === UPLOAD_ERR_INI_SIZE ? 'chunk_too_large' : 'upload_failed');
+    }
+    if ($have + (int) $c['size'] > $total) {
+        @unlink($part);
+        throw new ApiError('invalid_upload');
+    }
+    $in2 = fopen($c['tmp_name'], 'rb');
+    $out = fopen($part, 'ab');
+    if (!$in2 || !$out) {
+        throw new ApiError('upload_failed', 500);
+    }
+    flock($out, LOCK_EX);
+    stream_copy_to_stream($in2, $out);
+    flock($out, LOCK_UN);
+    fclose($in2);
+    fclose($out);
+    clearstatcache();
+    $have = filesize($part);
+    if ($have < $total) {
+        return ['next_offset' => $have];
+    }
+    $row = store_file($part, (string) ($_POST['name'] ?? 'file'), $have, (string) ($_POST['type'] ?? ''), $me, $_POST, false);
+    return ['file' => file_out($row)];
+}
 
 function act_files_upload(array $in): array
 {

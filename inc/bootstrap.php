@@ -28,7 +28,7 @@ function config(?string $key = null)
         $cfg = require $file;
         $cfg += [
             'poll_timeout' => 20,
-            'max_upload_mb' => 50,
+            'max_upload_mb' => 200,
             'allow_registration' => true,
             'app_name' => 'تل‌چت',
         ];

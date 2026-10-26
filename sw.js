@@ -1,9 +1,9 @@
 /* Service Worker تل‌چت: کش برنامه برای اجرای سریع و آفلاین + نمایش اعلان */
-const VERSION = 'telchat-v3';
+const VERSION = 'telchat-v4';
 const MEDIA = 'telchat-media-v1';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest',
-  'assets/css/app.css?v=3', 'assets/js/icons.js?v=3', 'assets/js/app.js?v=3', 'assets/js/settings.js?v=3',
+  'assets/css/app.css?v=4', 'assets/js/icons.js?v=4', 'assets/js/app.js?v=4', 'assets/js/settings.js?v=4',
   'assets/fonts/Vazirmatn.woff2', 'assets/icons/icon-192.png', 'assets/icons/badge.png',
 ];
 
