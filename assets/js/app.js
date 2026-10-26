@@ -103,6 +103,12 @@ const ERRORS = {
   not_member: 'شما عضو این گفتگو نیستید',
   network: 'خطا در اتصال به سرور',
   not_installed: 'برنامه هنوز نصب نشده است. install.php را باز کنید',
+  account_banned: 'حساب شما توسط مدیر مسدود شده است',
+  request_pending: 'تا وقتی درخواست گفتگو پذیرفته نشود، فقط یک پیام می‌توانید بفرستید',
+  request_declined: 'درخواست گفتگوی شما پذیرفته نشد',
+  request_not_accepted: 'ابتدا درخواست گفتگو را بپذیرید',
+  admin_only: 'فقط مدیر سیستم دسترسی دارد',
+  server_error: 'خطای سرور؛ لطفاً دوباره تلاش کنید',
 };
 const errText = (e) => ERRORS[e?.message] || ERRORS[e] || 'خطا: ' + (e?.message || e);
 
@@ -224,9 +230,13 @@ const App = {
   async loadChats() {
     try {
       const r = await API.call('chats.list');
+      const prevReq = this.chats.get(this.current)?.request ?? null;
       this.chats = new Map(r.chats.map((c) => [c.id, c]));
       renderChatList();
-      if (this.current && this.chats.has(this.current)) renderChatHeader();
+      if (this.current && this.chats.has(this.current)) {
+        renderChatHeader();
+        if ((this.chats.get(this.current).request ?? null) !== prevReq) renderComposer();
+      }
       updateBadge();
     } catch (e) { if (e.message !== 'network') toast(errText(e)); }
   },
@@ -532,6 +542,9 @@ function chatItemHtml(c) {
     }
     sub = (who ? `<b>${esc(who)}: </b>` : '') + esc(lm.preview ?? previewOf(lm));
   } else if (c.type === 'group') sub = faNum(c.member_count) + ' عضو';
+  if (c.request === 'incoming') sub = `<span class="typing">درخواست گفتگو: </span>` + sub;
+  else if (c.request === 'waiting') sub = `<span class="typing">در انتظار تأیید</span>`;
+  else if (c.request === 'declined') sub = `<span style="color:var(--danger)">درخواست رد شد</span>`;
   let ticks = '';
   if (lm && lm.user_id === App.me?.id && lm.type !== 'system' && c.type !== 'saved') ticks = icon(lm.id <= c.others_read_id ? 'checks' : 'check');
   const right = c.unread ? `<span class="badge ${c.muted ? 'muted' : ''}">${faNum(c.unread > 999 ? '999+' : c.unread)}</span>` : (c.pinned ? `<span class="pin-mark">${icon('pin')}</span>` : '');
@@ -582,8 +595,9 @@ async function runSearch(q) {
   };
   draw();
   try {
-    const [u, m] = await Promise.all([API.call('users.search', { q }), API.call('messages.search', { q })]);
-    draw(u.users, m.messages);
+    const [u, m] = await Promise.allSettled([API.call('users.search', { q }), API.call('messages.search', { q })]);
+    draw(u.status === 'fulfilled' ? u.value.users : [], m.status === 'fulfilled' ? m.value.messages : []);
+    if (u.status === 'rejected') toast(errText(u.reason));
   } catch { draw([], []); }
 }
 
@@ -1264,6 +1278,20 @@ function renderComposer() {
     $('[data-unblock]', wrap).onclick = () => Settings.toggleBlock(c.peer);
     return;
   }
+  if (c.request === 'incoming') {
+    wrap.innerHTML = `<div class="request-box"><div class="rq-text"><b>${esc(c.title)}</b> می‌خواهد با شما گفتگو کند.<br>تا وقتی درخواست را نپذیرید، نمی‌تواند پیام دیگری بفرستد.</div>
+      <div class="rq-actions"><button class="btn" data-rq="accept">قبول</button><button class="btn flat" data-rq="decline">رد</button><button class="btn danger" data-rq="block">مسدود کردن</button></div></div>`;
+    wrap.onclick = (e) => { const a = e.target.closest('[data-rq]')?.dataset.rq; if (a) respondRequest(c, a); };
+    return;
+  }
+  if (c.request === 'waiting' || c.request === 'declined') {
+    wrap.innerHTML = `<div class="request-box"><div class="rq-text">${c.request === 'waiting'
+      ? `درخواست گفتگو برای <b>${esc(c.title)}</b> ارسال شد.<br>پس از پذیرفتن درخواست، می‌توانید گفتگو را ادامه دهید.`
+      : `<b>${esc(c.title)}</b> درخواست گفتگوی شما را نپذیرفت.`}</div></div>`;
+    wrap.onclick = null;
+    return;
+  }
+  wrap.onclick = null;
   wrap.innerHTML = `
     <div class="emoji-panel" id="emojiPanel" hidden>${EMOJIS.map((e) => `<button type="button">${e}</button>`).join('')}</div>
     <div class="composer-inner">
@@ -1279,6 +1307,7 @@ function renderComposer() {
     </div>
     <input type="file" id="fileInput" multiple hidden>`;
   const input = $('#input');
+  if (c.request === 'outgoing') input.placeholder = 'یک پیام برای درخواست گفتگو بنویسید...';
   input.value = App.drafts[App.current] || '';
   autoGrow();
   updateSendBtn();
@@ -1413,6 +1442,24 @@ function addPending(chatId, data, reply) {
   if (App.current === chatId) appendMsgNode(m);
   return m;
 }
+async function respondRequest(c, action) {
+  if (action === 'block') {
+    const r = await dialog({ title: 'مسدود کردن ' + c.title, text: 'درخواست رد می‌شود و این کاربر دیگر نمی‌تواند به شما پیام دهد.', buttons: [{ text: 'مسدود کردن', value: 1, danger: true }] });
+    if (!r) return;
+  }
+  try {
+    const r = await API.call('chats.respond', { chat_id: c.id, accept: action === 'accept' ? 1 : 0, block: action === 'block' ? 1 : 0 });
+    if (action === 'accept') {
+      App.chats.set(c.id, r.chat);
+      renderComposer(); renderChatList();
+    } else {
+      App.chats.delete(c.id);
+      closeChat();
+      toast(action === 'block' ? 'کاربر مسدود شد' : 'درخواست رد شد');
+    }
+  } catch (e) { toast(errText(e)); }
+}
+
 function resolvePending(tmp, real) {
   const st = App.msgs.get(tmp.chat_id);
   if (!st) return;
@@ -1429,6 +1476,7 @@ function resolvePending(tmp, real) {
     c.last_message = { ...real, preview: previewOf(real) };
     c.updated_at = real.created_at;
     if (c.type === 'saved') { c.others_read_id = real.id; document.getElementById('m' + real.id) && updateTicks(document.getElementById('m' + real.id)); }
+    if (c.request === 'outgoing' && real.type !== 'system') { c.request = 'waiting'; if (App.current === c.id) renderComposer(); }
     renderChatList();
   }
 }

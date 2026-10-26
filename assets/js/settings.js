@@ -226,6 +226,7 @@ const Settings = {
         ${sItem('bookmark', 'پیام‌های ذخیره شده', '', 'data-a="saved"')}
         ${sItem('settings', 'تنظیمات', '', 'data-a="settings"')}
         ${sItem('palette', 'حالت شب', '', 'data-a="night"', toggleHtml(dark))}
+        ${me.is_admin ? sItem('shield', 'پنل مدیریت', '', 'data-a="admin"') : ''}
         <div class="s-sep"></div>
         <div class="s-note">${esc(App.cfg.app_name || 'تل‌چت')} — پیام‌رسان روی سرور شخصی شما</div>`,
       mount: (b) => {
@@ -234,6 +235,7 @@ const Settings = {
           if (a === 'group') this.createGroup();
           if (a === 'contacts') Modal.push(this.contactsPage());
           if (a === 'saved') { Modal.close(); this.openSaved(); }
+          if (a === 'admin') window.open('admin/', '_blank');
           if (a === 'settings') Modal.push(this.settingsPage());
           if (a === 'night') {
             e.preventDefault();
@@ -294,7 +296,7 @@ const Settings = {
           const q = e.target.value.trim();
           if (q.length < 2) { draw(list, list.length ? 'مخاطبین' : ''); return; }
           t = setTimeout(async () => {
-            try { draw((await API.call('users.search', { q })).users, null); } catch { /* ignore */ }
+            try { draw((await API.call('users.search', { q })).users, null); } catch (er) { draw([], null); toast(errText(er)); }
           }, 250);
         };
         if (!isTouch) $('input', b).focus();

@@ -290,6 +290,15 @@ function chat_out(array $c, array $member): array
         $o['others_read_id'] = (int) $c['last_message_id'];
         $o['title'] = 'پیام‌های ذخیره شده';
     }
+    $o['request'] = null;
+    if ($c['type'] === 'private' && (int) ($c['accepted'] ?? 1) !== 1) {
+        if ((int) $c['requested_by'] === $me) {
+            $sent = (int) val('SELECT COUNT(*) FROM messages WHERE chat_id = ? AND user_id = ? AND deleted = 0', [$chatId, $me]);
+            $o['request'] = (int) $c['accepted'] === -1 ? 'declined' : ($sent ? 'waiting' : 'outgoing');
+        } else {
+            $o['request'] = 'incoming';
+        }
+    }
     if ($c['type'] === 'private') {
         $peerId = (int) ($others[0]['user_id'] ?? 0);
         $peer = $peerId ? one('SELECT * FROM users WHERE id = ?', [$peerId]) : null;
@@ -590,6 +599,9 @@ function act_auth_login(array $in): array
         usleep(400000);
         throw new ApiError('invalid_credentials', 401);
     }
+    if ((int) ($u['banned'] ?? 0)) {
+        throw new ApiError('account_banned', 403);
+    }
     if (password_needs_rehash($u['password_hash'], PASSWORD_DEFAULT)) {
         q('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash((string) $in['password'], PASSWORD_DEFAULT), (int) $u['id']]);
     }
@@ -622,7 +634,8 @@ function act_config(array $in): array
 
 function act_me_get(array $in): array
 {
-    return ['user' => user_out(current_user(), true)];
+    $u = current_user();
+    return ['user' => user_out($u, true) + ['is_admin' => (bool) (int) $u['is_admin']]];
 }
 
 function act_me_update(array $in): array
@@ -685,6 +698,12 @@ function notify_contacts(int $userId): void
 
 /* ============================== کاربران ============================== */
 
+/** الگوی LIKE امن که در MySQL و SQLite یکسان کار می‌کند */
+function like_pattern(string $q): string
+{
+    return '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $q) . '%';
+}
+
 function act_users_search(array $in): array
 {
     $qs = mb_trim((string) ($in['q'] ?? ''));
@@ -692,9 +711,9 @@ function act_users_search(array $in): array
     if (mb_strlen($qs) < 2) {
         return ['users' => []];
     }
-    $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $qs) . '%';
+    $like = like_pattern($qs);
     $rows = all(
-        "SELECT * FROM users WHERE id <> ? AND (username LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\') ORDER BY (username = ?) DESC, last_seen DESC LIMIT 30",
+        "SELECT * FROM users WHERE id <> ? AND banned = 0 AND (username LIKE ? ESCAPE '!' OR name LIKE ? ESCAPE '!') ORDER BY (username = ?) DESC, last_seen DESC LIMIT 30",
         [uid(), strtolower($like), $like, strtolower($qs)]
     );
     return ['users' => array_map(fn($u) => user_out($u, true), $rows)];
@@ -746,15 +765,46 @@ function act_chats_open_private(array $in): array
     $chat = one('SELECT * FROM chats WHERE uniq_key = ?', [$key]);
     $now = time();
     if (!$chat) {
-        $id = insert('chats', ['type' => 'private', 'uniq_key' => $key, 'created_at' => $now, 'updated_at' => $now]);
+        $id = insert('chats', ['type' => 'private', 'uniq_key' => $key, 'accepted' => 0, 'requested_by' => $me, 'created_at' => $now, 'updated_at' => $now]);
         foreach ([$me, $peerId] as $u) {
             insert('chat_members', ['chat_id' => $id, 'user_id' => $u, 'joined_at' => $now, 'hidden' => $u === $me ? 0 : 1]);
         }
         $chat = chat_row($id);
     } else {
         q('UPDATE chat_members SET hidden = 0 WHERE chat_id = ? AND user_id = ?', [(int) $chat['id'], $me]);
+        // کسی که قبلاً درخواست را رد کرده، با باز کردن دوباره گفتگو می‌تواند آن را بپذیرد
+        if ((int) $chat['accepted'] === -1 && (int) $chat['requested_by'] !== $me) {
+            q('UPDATE chats SET accepted = 0 WHERE id = ?', [(int) $chat['id']]);
+        }
     }
     return ['chat' => chat_for_me((int) $chat['id'])];
+}
+
+/** پاسخ به درخواست گفتگو: قبول، رد یا رد و مسدود کردن */
+function act_chats_respond(array $in): array
+{
+    $chatId = (int) ($in['chat_id'] ?? 0);
+    $member = require_member($chatId);
+    $chat = chat_row($chatId);
+    $me = uid();
+    if ($chat['type'] !== 'private' || (int) $chat['accepted'] === 1 || (int) $chat['requested_by'] === $me) {
+        throw new ApiError('no_request');
+    }
+    $requester = (int) $chat['requested_by'];
+    if (!empty($in['accept'])) {
+        q('UPDATE chats SET accepted = 1 WHERE id = ?', [$chatId]);
+        system_message(chat_row($chatId), $me, current_user()['name'] . ' درخواست گفتگو را پذیرفت');
+        emit([$me, $requester], 'chats_changed', ['chat_id' => $chatId]);
+        return ['chat' => chat_for_me($chatId)];
+    }
+    q('UPDATE chats SET accepted = -1 WHERE id = ?', [$chatId]);
+    q('UPDATE chat_members SET hidden = 1 WHERE id = ?', [(int) $member['id']]);
+    if (!empty($in['block']) && !val('SELECT 1 FROM blocks WHERE user_id = ? AND blocked_id = ?', [$me, $requester])) {
+        insert('blocks', ['user_id' => $me, 'blocked_id' => $requester, 'created_at' => time()]);
+    }
+    emit([$requester], 'chats_changed', ['chat_id' => $chatId]);
+    emit([$me], 'chat_removed', ['chat_id' => $chatId]);
+    return ['ok' => true];
 }
 
 function act_chats_saved(array $in): array
@@ -1092,13 +1142,25 @@ function act_messages_send(array $in): array
     return ['message' => $msg];
 }
 
-/** در چت خصوصی اگر یکی دیگری را بلاک کرده باشد ارسال ممکن نیست */
+/** در چت خصوصی اگر یکی دیگری را بلاک کرده باشد یا درخواست گفتگو پذیرفته نشده باشد ارسال ممکن نیست */
 function assert_not_blocked(array $chat): void
 {
     if ($chat['type'] !== 'private') {
         return;
     }
     $me = uid();
+    $accepted = (int) ($chat['accepted'] ?? 1);
+    if ($accepted !== 1) {
+        if ((int) $chat['requested_by'] !== $me) {
+            throw new ApiError('request_not_accepted', 403);
+        }
+        if ($accepted === -1) {
+            throw new ApiError('request_declined', 403);
+        }
+        if (val('SELECT COUNT(*) FROM messages WHERE chat_id = ? AND user_id = ? AND deleted = 0', [(int) $chat['id'], $me])) {
+            throw new ApiError('request_pending', 403);
+        }
+    }
     foreach (member_ids((int) $chat['id']) as $peer) {
         if ($peer === $me) {
             continue;
@@ -1282,10 +1344,10 @@ function act_messages_search(array $in): array
     if (mb_strlen($qs) < 2) {
         return ['messages' => []];
     }
-    $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $qs) . '%';
+    $like = like_pattern($qs);
     $me = uid();
     $sql = "SELECT m.* FROM messages m JOIN chat_members cm ON cm.chat_id = m.chat_id AND cm.user_id = ?
-            WHERE m.deleted = 0 AND m.id > cm.cleared_id AND m.type <> 'system' AND m.body LIKE ? ESCAPE '\\'
+            WHERE m.deleted = 0 AND m.id > cm.cleared_id AND m.type <> 'system' AND m.body LIKE ? ESCAPE '!'
             AND NOT EXISTS (SELECT 1 FROM message_hidden h WHERE h.message_id = m.id AND h.user_id = ?)";
     $p = [$me, $like, $me];
     if (!empty($in['chat_id'])) {
@@ -1521,21 +1583,35 @@ function act_me_delete(array $in): array
     if (!password_verify((string) ($in['password'] ?? ''), $me['password_hash'])) {
         throw new ApiError('invalid_password');
     }
-    $id = (int) $me['id'];
+    delete_user((int) $me['id']);
+    return ['ok' => true];
+}
+
+/** حذف کامل یک کاربر (پیام‌هایش با نام «کاربر حذف شده» باقی می‌مانند) */
+function delete_user(int $id): void
+{
     $groups = array_map('intval', array_column(all("SELECT c.id FROM chats c JOIN chat_members cm ON cm.chat_id = c.id WHERE cm.user_id = ? AND c.type = 'group'", [$id]), 'id'));
     foreach ($groups as $g) {
-        try {
-            act_chats_leave(['chat_id' => $g]);
-        } catch (ApiError $e) {
+        $member = member_row($g, $id);
+        if (!$member) {
+            continue;
         }
+        q('DELETE FROM chat_members WHERE id = ?', [(int) $member['id']]);
+        if ($member['role'] === 'owner') {
+            $next = one("SELECT * FROM chat_members WHERE chat_id = ? ORDER BY (role = 'admin') DESC, id LIMIT 1", [$g]);
+            if ($next) {
+                q("UPDATE chat_members SET role = 'owner' WHERE id = ?", [(int) $next['id']]);
+                q('UPDATE chats SET owner_id = ? WHERE id = ?', [(int) $next['user_id'], $g]);
+            }
+        }
+        emit(member_ids($g), 'chats_changed', []);
     }
     notify_contacts($id);
-    foreach (['tokens' => 'user_id', 'push_subs' => 'user_id', 'contacts' => 'user_id', 'blocks' => 'user_id', 'reactions' => 'user_id'] as $t => $col) {
-        q("DELETE FROM $t WHERE $col = ?", [$id]);
+    foreach (['tokens', 'push_subs', 'contacts', 'blocks', 'reactions'] as $t) {
+        q("DELETE FROM $t WHERE user_id = ?", [$id]);
     }
     q('DELETE FROM contacts WHERE contact_id = ?', [$id]);
     q('DELETE FROM blocks WHERE blocked_id = ?', [$id]);
-    q("DELETE FROM chat_members WHERE user_id = ?", [$id]);
+    q('DELETE FROM chat_members WHERE user_id = ?', [$id]);
     q('DELETE FROM users WHERE id = ?', [$id]);
-    return ['ok' => true];
 }

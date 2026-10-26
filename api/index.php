@@ -1,6 +1,7 @@
 <?php
 require dirname(__DIR__) . '/inc/bootstrap.php';
 require dirname(__DIR__) . '/inc/actions.php';
+require dirname(__DIR__) . '/inc/admin.php';
 
 const PUBLIC_ACTIONS = ['auth.register', 'auth.login', 'config'];
 

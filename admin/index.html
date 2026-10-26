@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>پنل مدیریت تل‌چت</title>
+<link rel="icon" type="image/png" href="../assets/icons/icon-192.png">
+<link rel="stylesheet" href="../assets/css/app.css?v=3">
+<style>
+body { overflow: auto; background: var(--bg2); }
+.adm { display: flex; min-height: 100vh; }
+.adm-side { width: 240px; background: var(--bg); border-left: 1px solid var(--border); padding: 16px 10px; position: sticky; top: 0; height: 100vh; flex-shrink: 0; display: flex; flex-direction: column; }
+.adm-logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; padding: 0 10px 18px; }
+.adm-logo img { width: 36px; height: 36px; border-radius: 50%; }
+.adm-nav a { display: flex; align-items: center; gap: 14px; padding: 11px 14px; border-radius: 10px; color: var(--text); cursor: pointer; margin-bottom: 2px; }
+.adm-nav a:hover { background: var(--hover); }
+.adm-nav a.on { background: var(--primary); color: #fff; }
+.adm-nav a.on .icon { color: #fff; }
+.adm-nav .icon { color: var(--text2); }
+.adm-main { flex: 1; min-width: 0; padding: 24px; }
+.adm-main h2 { margin: 0 0 18px; font-size: 22px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; margin-bottom: 22px; }
+.card { background: var(--bg); border-radius: 14px; padding: 16px 18px; box-shadow: var(--shadow); }
+.card .k { color: var(--text2); font-size: 14px; }
+.card .v { font-size: 26px; font-weight: 700; margin-top: 4px; }
+.card .v.sm { font-size: 17px; }
+.panel { background: var(--bg); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; margin-bottom: 20px; }
+.panel-head { display: flex; gap: 10px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.panel-head input, .panel-head select { border: 1px solid var(--border); background: var(--bg); border-radius: 10px; padding: 8px 12px; outline: none; }
+.panel-head input { flex: 1; min-width: 160px; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 15px; }
+.tbl th { text-align: right; color: var(--text2); font-weight: 500; font-size: 13px; padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.tbl td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.tbl tr:last-child td { border-bottom: 0; }
+.tbl tr.clk { cursor: pointer; }
+.tbl tr.clk:hover td { background: var(--hover); }
+.who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.who .n { font-weight: 500; }
+.who .u { color: var(--text2); font-size: 13px; direction: ltr; text-align: right; }
+.tag { display: inline-block; font-size: 12px; border-radius: 8px; padding: 1px 8px; margin-inline-start: 4px; }
+.tag.admin { background: rgba(51, 144, 236, .15); color: var(--primary); }
+.tag.ban { background: rgba(229, 57, 53, .12); color: var(--danger); }
+.tag.on { background: rgba(79, 174, 78, .15); color: var(--green); }
+.pager { display: flex; gap: 8px; justify-content: center; align-items: center; padding: 12px; color: var(--text2); }
+.pager button, .sbtn { border: 1px solid var(--border); background: var(--bg); border-radius: 10px; padding: 7px 14px; }
+.sbtn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.sbtn.danger { color: var(--danger); }
+.chart { display: flex; align-items: flex-end; gap: 6px; height: 160px; padding: 16px 14px 8px; direction: ltr; }
+.chart .b { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
+.chart .b i { width: 100%; max-width: 34px; background: var(--primary); border-radius: 6px 6px 2px 2px; min-height: 2px; }
+.chart .b span { font-size: 11px; color: var(--text2); }
+.form { padding: 18px; max-width: 560px; }
+.row2 { display: flex; gap: 12px; } .row2 > * { flex: 1; }
+.chk { display: flex; gap: 10px; align-items: center; margin: 6px 0 16px; }
+.chk input { width: 18px; height: 18px; accent-color: var(--primary); }
+.note { color: var(--text2); font-size: 14px; line-height: 1.8; padding: 0 18px 18px; }
+.mtop { display: none; }
+@media (max-width: 800px) {
+  .adm { flex-direction: column; }
+  .adm-side { width: 100%; height: auto; position: sticky; top: 0; z-index: 5; padding: 8px; flex-direction: row; overflow-x: auto; border: 0; border-bottom: 1px solid var(--border); }
+  .adm-logo { display: none; }
+  .adm-nav { display: flex; gap: 4px; }
+  .adm-nav a { white-space: nowrap; padding: 8px 12px; margin: 0; }
+  .adm-main { padding: 14px; }
+  .hide-m { display: none; }
+}
+</style>
+</head>
+<body>
+<div id="root"><div class="splash"><img src="../assets/icons/icon-192.png" alt=""></div></div>
+<div id="toast"></div>
+<script src="../assets/js/icons.js?v=3"></script>
+<script>
+'use strict';
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const icon = (n) => `<svg class="icon" viewBox="0 0 24 24"><path d="${ICONS[n] || ''}"/></svg>`;
+const fa = (n) => new Intl.NumberFormat('fa-IR').format(n);
+const fdate = (t) => t ? new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(t * 1000) : '—';
+const fsize = (b) => b == null ? '—' : b < 1048576 ? fa((b / 1024).toFixed(1)) + ' KB' : b < 1073741824 ? fa((b / 1048576).toFixed(1)) + ' MB' : fa((b / 1073741824).toFixed(2)) + ' GB';
+const ls = (k, v) => { try { if (v === undefined) return JSON.parse(localStorage.getItem(k)); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch { return null; } };
+const ERR = {
+  invalid_credentials: 'نام کاربری یا رمز اشتباه است', admin_only: 'این حساب دسترسی مدیریت ندارد', username_taken: 'این نام کاربری گرفته شده است',
+  invalid_username: 'نام کاربری نامعتبر است (حروف انگلیسی، عدد و _، حداقل ۴ کاراکتر)', password_too_short: 'رمز حداقل ۶ کاراکتر', name_required: 'نام را وارد کنید',
+  config_not_writable: 'فایل inc/config.php قابل نوشتن نیست', cannot_delete_self: 'نمی‌توانید حساب خودتان را حذف کنید', account_banned: 'حساب مسدود است', network: 'خطا در اتصال به سرور',
+};
+const errText = (e) => ERR[e.message] || 'خطا: ' + e.message;
+let tt;
+function toast(t) { const el = $('#toast'); el.textContent = t; el.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => el.classList.remove('show'), 2500); }
+
+/* تم مطابق تنظیمات برنامه اصلی */
+(() => {
+  const s = ls('tc_settings') || {};
+  const dark = s.theme === 'dark' || ((s.theme || 'auto') === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+})();
+
+let token = ls('tc_admin_token') || ls('tc_token');
+async function api(action, data = {}) {
+  let r;
+  try {
+    r = await fetch('../api/index.php?action=' + action, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { 'X-Auth-Token': token } : {}) }, body: JSON.stringify(data) });
+  } catch { throw new Error('network'); }
+  const j = await r.json().catch(() => ({ error: 'network' }));
+  if (j.error) {
+    if (j.error === 'unauthorized' || j.error === 'admin_only') { if (action !== 'auth.login') { ls('tc_admin_token', null); token = null; renderLogin(ERR[j.error] || ''); } }
+    throw new Error(j.error);
+  }
+  return j;
+}
+
+function avatar(u, cls = 'xs') {
+  if (u.avatar) return `<div class="avatar ${cls}"><img src="../${esc(u.avatar)}" alt=""></div>`;
+  const t = (u.name || u.title || '?').trim()[0] || '?';
+  return `<div class="avatar ${cls} c${u.id % 7}">${esc(t)}</div>`;
+}
+
+/* ---------------- ورود ---------------- */
+function renderLogin(msg = '') {
+  $('#root').innerHTML = `<div class="auth"><form class="auth-box">
+    <img class="logo" src="../assets/icons/icon-192.png" alt=""><h1>پنل مدیریت</h1><p class="sub">با حساب مدیر وارد شوید</p>
+    <div class="field"><label>نام کاربری</label><input name="username" dir="ltr" required autocapitalize="none"></div>
+    <div class="field"><label>رمز عبور</label><input name="password" type="password" dir="ltr" required></div>
+    <div class="err-text">${esc(msg)}</div><button class="btn">ورود</button>
+    <a class="btn flat switch" href="../" style="display:block">بازگشت به پیام‌رسان</a></form></div>`;
+  $('form').onsubmit = async (e) => {
+    e.preventDefault();
+    const d = Object.fromEntries(new FormData(e.target));
+    try {
+      const r = await api('auth.login', d);
+      token = r.token;
+      const me = await api('me.get');
+      if (!me.user.is_admin) { $('.err-text').textContent = ERR.admin_only; token = null; return; }
+      ls('tc_admin_token', token);
+      boot(me.user);
+    } catch (er) { $('.err-text').textContent = errText(er); }
+  };
+}
+
+/* ---------------- چیدمان ---------------- */
+const PAGES = [['dash', 'chat', 'داشبورد'], ['users', 'person', 'کاربران'], ['groups', 'group', 'گروه‌ها'], ['broadcast', 'send', 'اطلاعیه'], ['settings', 'settings', 'تنظیمات']];
+let ME = null;
+function boot(me) {
+  ME = me;
+  $('#root').innerHTML = `<div class="adm"><aside class="adm-side">
+    <div class="adm-logo"><img src="../assets/icons/icon-192.png" alt="">پنل مدیریت</div>
+    <nav class="adm-nav">${PAGES.map(([k, i, t]) => `<a data-p="${k}">${icon(i)}<span>${t}</span></a>`).join('')}
+      <a href="../">${icon('back')}<span>پیام‌رسان</span></a><a data-p="logout">${icon('logout')}<span>خروج</span></a></nav>
+    </aside><main class="adm-main" id="main"></main></div>`;
+  $('.adm-nav').onclick = (e) => {
+    const p = e.target.closest('[data-p]')?.dataset.p;
+    if (!p) return;
+    if (p === 'logout') { ls('tc_admin_token', null); token = null; renderLogin(); return; }
+    location.hash = p;
+  };
+  route();
+}
+window.onhashchange = () => ME && route();
+function route() {
+  const p = (location.hash.slice(1) || 'dash').split('/')[0];
+  document.querySelectorAll('.adm-nav a[data-p]').forEach((a) => a.classList.toggle('on', a.dataset.p === p));
+  ({ dash: pageDash, users: pageUsers, groups: pageGroups, broadcast: pageBroadcast, settings: pageSettings }[p] || pageDash)();
+}
+const main = () => $('#main');
+const loading = () => { main().innerHTML = '<div class="spinner"></div>'; };
+
+/* ---------------- داشبورد ---------------- */
+async function pageDash() {
+  loading();
+  try {
+    const s = await api('admin.stats');
+    const max = Math.max(1, ...s.daily.map((d) => d.messages));
+    const card = (k, v, sm = '') => `<div class="card"><div class="k">${k}</div><div class="v ${sm}">${v}</div></div>`;
+    main().innerHTML = `<h2>داشبورد</h2>
+      <div class="cards">
+        ${card('کل کاربران', fa(s.users))}${card('آنلاین الان', fa(s.online))}${card('فعال امروز', fa(s.active_today))}${card('ثبت‌نام امروز', fa(s.new_today))}
+        ${card('کل پیام‌ها', fa(s.messages))}${card('پیام‌های امروز', fa(s.messages_today))}${card('گروه‌ها', fa(s.groups))}${card('گفتگوهای خصوصی', fa(s.private_chats))}
+        ${card('فایل‌ها', fa(s.files) + ' — ' + fsize(s.files_size), 'sm')}${card('فضای خالی دیسک', fsize(s.disk_free), 'sm')}${card('کاربران مسدود', fa(s.banned))}
+        ${card('سرور', 'PHP ' + esc(s.php) + ' — ' + esc(s.db) + (s.https ? ' — https' : ' — http'), 'sm')}
+      </div>
+      <div class="panel"><div class="panel-head"><b>پیام‌های ۱۴ روز اخیر</b></div>
+      <div class="chart">${s.daily.map((d) => `<div class="b" title="${fa(d.messages)}"><span>${fa(d.messages)}</span><i style="height:${(d.messages / max) * 100}%"></i>
+        <span>${new Intl.DateTimeFormat('fa-IR', { day: 'numeric' }).format(d.day * 1000)}</span></div>`).join('')}</div></div>`;
+  } catch (e) { main().innerHTML = `<div class="empty-note">${esc(errText(e))}</div>`; }
+}
+
+/* ---------------- کاربران ---------------- */
+let uState = { q: '', filter: '', page: 1 };
+async function pageUsers() {
+  main().innerHTML = `<h2>کاربران</h2><div class="panel"><div class="panel-head">
+    <input id="uq" placeholder="جستجوی نام یا نام کاربری" value="${esc(uState.q)}">
+    <select id="uf"><option value="">همه</option><option value="online">آنلاین</option><option value="admins">مدیران</option><option value="banned">مسدود شده</option></select>
+    <button class="sbtn primary" id="uadd">+ کاربر جدید</button></div><div id="ulist"><div class="spinner"></div></div></div>`;
+  $('#uf').value = uState.filter;
+  let t;
+  $('#uq').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { uState.q = e.target.value.trim(); uState.page = 1; loadUsers(); }, 300); };
+  $('#uf').onchange = (e) => { uState.filter = e.target.value; uState.page = 1; loadUsers(); };
+  $('#uadd').onclick = () => userForm(null);
+  loadUsers();
+}
+async function loadUsers() {
+  const box = $('#ulist');
+  try {
+    const r = await api('admin.users', uState);
+    const now = Date.now() / 1000;
+    box.innerHTML = r.users.length ? `<table class="tbl"><thead><tr><th>کاربر</th><th class="hide-m">عضویت</th><th class="hide-m">آخرین بازدید</th><th class="hide-m">پیام‌ها</th><th>وضعیت</th></tr></thead><tbody>
+      ${r.users.map((u) => `<tr class="clk" data-id="${u.id}"><td><div class="who">${avatar(u)}<div><div class="n">${esc(u.name)}</div><div class="u">@${esc(u.username)}</div></div></div></td>
+        <td class="hide-m">${fdate(u.created_at)}</td><td class="hide-m">${now - u.last_seen < 45 ? '<span class="tag on">آنلاین</span>' : fdate(u.last_seen)}</td><td class="hide-m">${fa(u.messages)}</td>
+        <td>${u.is_admin ? '<span class="tag admin">مدیر</span>' : ''}${u.banned ? '<span class="tag ban">مسدود</span>' : ''}${!u.is_admin && !u.banned ? '<span class="tag">عادی</span>' : ''}</td></tr>`).join('')}
+      </tbody></table>${pager(r, uState, loadUsers)}` : '<div class="empty-note">کاربری یافت نشد</div>';
+    box.querySelector('.tbl')?.addEventListener('click', (e) => {
+      const tr = e.target.closest('tr[data-id]');
+      if (tr) userForm(r.users.find((u) => u.id === +tr.dataset.id));
+    });
+    bindPager(box, r, uState, loadUsers);
+  } catch (e) { box.innerHTML = `<div class="empty-note">${esc(errText(e))}</div>`; }
+}
+function pager(r, st) {
+  if (r.pages <= 1) return `<div class="pager">${fa(r.total)} مورد</div>`;
+  return `<div class="pager"><button data-pg="-1" ${st.page <= 1 ? 'disabled' : ''}>قبلی</button><span>صفحه ${fa(st.page)} از ${fa(r.pages)} (${fa(r.total)} مورد)</span><button data-pg="1" ${st.page >= r.pages ? 'disabled' : ''}>بعدی</button></div>`;
+}
+function bindPager(box, r, st, fn) {
+  box.querySelectorAll('[data-pg]').forEach((b) => b.onclick = () => { st.page += +b.dataset.pg; fn(); });
+}
+
+function modal(title, html, mount) {
+  const w = document.createElement('div');
+  w.className = 'modal-wrap';
+  w.innerHTML = `<div class="modal"><div class="modal-head"><button class="ibtn" data-x>${icon('close')}</button><h3>${esc(title)}</h3></div><div class="modal-body">${html}</div></div>`;
+  document.body.append(w);
+  const close = () => w.remove();
+  $('[data-x]', w).onclick = close;
+  w.addEventListener('mousedown', (e) => { if (e.target === w) close(); });
+  mount($('.modal-body', w), close);
+}
+
+function userForm(u) {
+  const isNew = !u;
+  const self = u && u.id === ME.id;
+  modal(isNew ? 'کاربر جدید' : 'ویرایش کاربر', `<div class="form">
+    ${u ? `<div class="who" style="margin-bottom:18px">${avatar(u, 'sm')}<div><div class="n">${esc(u.name)}</div><div class="u">عضویت: ${fdate(u.created_at)} — ${fa(u.sessions)} دستگاه فعال — ${fa(u.messages)} پیام</div></div></div>` : ''}
+    <div class="row2"><div class="field"><label>نام</label><input name="name" value="${esc(u?.name || '')}"></div>
+    <div class="field"><label>نام کاربری</label><input name="username" dir="ltr" value="${esc(u?.username || '')}"></div></div>
+    ${u ? `<div class="field"><label>بیوگرافی</label><input name="bio" value="${esc(u.bio || '')}"></div>` : ''}
+    <div class="field"><label>${isNew ? 'رمز عبور' : 'رمز جدید (برای تغییر پر کنید)'}</label><input name="password" type="text" dir="ltr" autocomplete="off"></div>
+    ${self ? '<div class="note" style="padding:0 0 10px">این حساب خودتان است؛ مدیریت و مسدودسازی آن قابل تغییر نیست.</div>' : `
+    <label class="chk"><input type="checkbox" name="is_admin" ${u?.is_admin ? 'checked' : ''}> دسترسی مدیر سیستم</label>
+    ${u ? `<label class="chk"><input type="checkbox" name="banned" ${u.banned ? 'checked' : ''}> مسدود کردن حساب (کاربر از همه دستگاه‌ها خارج می‌شود و نمی‌تواند وارد شود)</label>` : ''}`}
+    <div class="err-text"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="sbtn primary" data-save>${isNew ? 'ساخت کاربر' : 'ذخیره'}</button>
+      ${u && !self ? `<button class="sbtn" data-logout>خروج از همه دستگاه‌ها</button>${u.avatar ? '<button class="sbtn" data-rmav>حذف عکس</button>' : ''}<button class="sbtn danger" data-del>حذف کاربر</button>` : ''}
+    </div></div>`, (b, close) => {
+    const val = (n) => b.querySelector(`[name=${n}]`);
+    b.querySelector('[data-save]').onclick = async () => {
+      const d = { name: val('name').value, username: val('username').value, password: val('password').value };
+      if (u) d.bio = val('bio').value;
+      if (!self) { d.is_admin = val('is_admin').checked ? 1 : 0; if (u) d.banned = val('banned').checked ? 1 : 0; }
+      try {
+        if (isNew) await api('admin.user_create', d); else await api('admin.user_update', { id: u.id, ...d });
+        toast('ذخیره شد'); close(); loadUsers();
+      } catch (e) { b.querySelector('.err-text').textContent = errText(e); }
+    };
+    b.querySelector('[data-logout]')?.addEventListener('click', async () => { await api('admin.user_logout', { id: u.id }); toast('کاربر از همه دستگاه‌ها خارج شد'); });
+    b.querySelector('[data-rmav]')?.addEventListener('click', async () => { await api('admin.user_update', { id: u.id, remove_avatar: 1 }); toast('عکس حذف شد'); close(); loadUsers(); });
+    b.querySelector('[data-del]')?.addEventListener('click', async () => {
+      if (!confirm('حساب «' + u.name + '» برای همیشه حذف شود؟')) return;
+      const msgs = confirm('پیام‌های این کاربر هم از همه گفتگوها پاک شود؟\n(تأیید = بله، لغو = پیام‌ها بمانند)');
+      try { await api('admin.user_delete', { id: u.id, delete_messages: msgs ? 1 : 0 }); toast('کاربر حذف شد'); close(); loadUsers(); } catch (e) { toast(errText(e)); }
+    });
+  });
+}
+
+/* ---------------- گروه‌ها ---------------- */
+let gState = { q: '', page: 1 };
+async function pageGroups() {
+  main().innerHTML = `<h2>گروه‌ها</h2><div class="panel"><div class="panel-head"><input id="gq" placeholder="جستجوی نام گروه" value="${esc(gState.q)}"></div><div id="glist"><div class="spinner"></div></div></div>`;
+  let t;
+  $('#gq').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { gState.q = e.target.value.trim(); gState.page = 1; loadGroups(); }, 300); };
+  loadGroups();
+}
+async function loadGroups() {
+  const box = $('#glist');
+  try {
+    const r = await api('admin.groups', gState);
+    box.innerHTML = r.groups.length ? `<table class="tbl"><thead><tr><th>گروه</th><th>اعضا</th><th class="hide-m">پیام‌ها</th><th class="hide-m">سازنده</th><th class="hide-m">آخرین فعالیت</th></tr></thead><tbody>
+      ${r.groups.map((g) => `<tr class="clk" data-id="${g.id}"><td><div class="who">${avatar(g)}<div class="n">${esc(g.title)}</div></div></td><td>${fa(g.members)}</td>
+        <td class="hide-m">${fa(g.messages)}</td><td class="hide-m">${esc(g.owner)}</td><td class="hide-m">${fdate(g.updated_at)}</td></tr>`).join('')}</tbody></table>${pager(r, gState)}`
+      : '<div class="empty-note">گروهی یافت نشد</div>';
+    box.querySelector('.tbl')?.addEventListener('click', (e) => {
+      const tr = e.target.closest('tr[data-id]');
+      if (tr) groupView(r.groups.find((g) => g.id === +tr.dataset.id));
+    });
+    bindPager(box, r, gState, loadGroups);
+  } catch (e) { box.innerHTML = `<div class="empty-note">${esc(errText(e))}</div>`; }
+}
+async function groupView(g) {
+  const m = await api('admin.group_members', { id: g.id }).catch((e) => { toast(errText(e)); return null; });
+  if (!m) return;
+  const roles = { owner: 'سازنده', admin: 'مدیر', member: '' };
+  modal(g.title, `<div class="form" style="max-width:none">
+    <div class="who" style="margin-bottom:12px">${avatar(g, 'sm')}<div><div class="n">${esc(g.title)}</div><div class="u" style="direction:rtl">${fa(g.members)} عضو — ${fa(g.messages)} پیام — ساخته شده ${fdate(g.created_at)}</div></div></div>
+    ${g.description ? `<p>${esc(g.description)}</p>` : ''}
+    <table class="tbl">${m.members.map((u) => `<tr><td><div class="who">${avatar(u)}<div><div class="n">${esc(u.name)}</div><div class="u">@${esc(u.username)}</div></div></div></td><td>${roles[u.role] ? `<span class="tag admin">${roles[u.role]}</span>` : ''}</td></tr>`).join('')}</table>
+    <div style="margin-top:16px"><button class="sbtn danger" data-del>حذف گروه برای همه</button></div></div>`, (b, close) => {
+    b.querySelector('[data-del]').onclick = async () => {
+      if (!confirm('گروه «' + g.title + '» و همه پیام‌هایش حذف شود؟')) return;
+      try { await api('admin.group_delete', { id: g.id }); toast('گروه حذف شد'); close(); loadGroups(); } catch (e) { toast(errText(e)); }
+    };
+  });
+}
+
+/* ---------------- اطلاعیه ---------------- */
+function pageBroadcast() {
+  main().innerHTML = `<h2>ارسال اطلاعیه</h2><div class="panel"><div class="form">
+    <div class="field"><label>متن اطلاعیه</label><textarea id="bt" rows="6" maxlength="4096"></textarea></div>
+    <button class="sbtn primary" id="bs">ارسال به همه کاربران</button></div>
+    <div class="note">پیام از طرف حساب شما (${esc(ME.name)}) در گفتگوی خصوصی برای همه کاربران فعال ارسال می‌شود.</div></div>`;
+  $('#bs').onclick = async () => {
+    const text = $('#bt').value.trim();
+    if (!text) return;
+    if (!confirm('این پیام برای همه کاربران ارسال شود؟')) return;
+    $('#bs').disabled = true;
+    try { const r = await api('admin.broadcast', { text }); toast('برای ' + fa(r.sent) + ' کاربر ارسال شد'); $('#bt').value = ''; } catch (e) { toast(errText(e)); }
+    $('#bs').disabled = false;
+  };
+}
+
+/* ---------------- تنظیمات ---------------- */
+async function pageSettings() {
+  loading();
+  try {
+    const s = (await api('admin.settings_get')).settings;
+    main().innerHTML = `<h2>تنظیمات</h2><div class="panel"><div class="form">
+      <div class="field"><label>نام برنامه</label><input name="app_name" value="${esc(s.app_name)}"></div>
+      <label class="chk"><input type="checkbox" name="allow_registration" ${s.allow_registration ? 'checked' : ''}> ثبت‌نام کاربران جدید آزاد باشد</label>
+      <div class="field"><label>کد دعوت ثبت‌نام (خالی = بدون کد)</label><input name="register_code" dir="ltr" value="${esc(s.register_code || '')}"></div>
+      <div class="row2"><div class="field"><label>حداکثر حجم فایل (مگابایت)</label><input name="max_upload_mb" type="number" min="1" value="${s.max_upload_mb}"></div>
+      <div class="field"><label>زمان انتظار ارتباط زنده (ثانیه)</label><input name="poll_timeout" type="number" min="0" max="50" value="${s.poll_timeout}"></div></div>
+      <div class="err-text"></div><button class="sbtn primary" data-save>ذخیره تنظیمات</button></div>
+      <div class="note">• محدودیت آپلود PHP روی این سرور: <b class="ltr">${esc(s.upload_limit)}</b> — برای فایل‌های بزرگ‌تر از بخش «MultiPHP INI Editor» در cPanel مقدار upload_max_filesize و post_max_size را بیشتر کنید.<br>
+      • «زمان انتظار ارتباط زنده»: هر کاربر آنلاین یک اتصال باز به این مدت نگه می‌دارد. روی هاست اشتراکی با محدودیت پردازش (Entry Processes)، عدد کمتری مثل ۱۰ بگذارید. صفر یعنی بدون انتظار (بیشترین سازگاری، مصرف بیشتر).
+      ${s.config_writable ? '' : '<br><b style="color:var(--danger)">• فایل inc/config.php قابل نوشتن نیست؛ دسترسی آن را در File Manager روی 644 بگذارید.</b>'}</div></div>`;
+    $('[data-save]').onclick = async () => {
+      const f = (n) => document.querySelector(`[name=${n}]`);
+      try {
+        await api('admin.settings_set', { app_name: f('app_name').value, allow_registration: f('allow_registration').checked ? 1 : 0, register_code: f('register_code').value, max_upload_mb: +f('max_upload_mb').value, poll_timeout: +f('poll_timeout').value });
+        toast('تنظیمات ذخیره شد');
+      } catch (e) { $('.err-text').textContent = errText(e); }
+    };
+  } catch (e) { main().innerHTML = `<div class="empty-note">${esc(errText(e))}</div>`; }
+}
+
+/* ---------------- شروع ---------------- */
+(async () => {
+  if (!token) return renderLogin();
+  try {
+    const me = await api('me.get');
+    if (!me.user.is_admin) { token = null; return renderLogin(ERR.admin_only); }
+    boot(me.user);
+  } catch (e) { if (token) renderLogin(); }
+})();
+</script>
+</body>
+</html>

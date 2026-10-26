@@ -4,3 +4,4 @@ uploads/*
 !uploads/.htaccess
 !uploads/index.html
 .DS_Store
+inc/.schema-*

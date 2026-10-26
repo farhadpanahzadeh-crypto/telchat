@@ -54,8 +54,31 @@ function db(): PDO
             $dsn = 'mysql:host=' . $c['host'] . ';port=' . ($c['port'] ?? 3306) . ';dbname=' . $c['name'] . ';charset=utf8mb4';
             $pdo = new PDO($dsn, $c['user'], $c['pass'], $opts);
         }
+        migrate($pdo);
     }
     return $pdo;
+}
+
+/** به‌روزرسانی ساختار دیتابیس نصب‌های قدیمی‌تر (فقط یک بار اجرا می‌شود) */
+function migrate(PDO $pdo): void
+{
+    $marker = APP_ROOT . '/inc/.schema-3';
+    if (is_file($marker)) {
+        return;
+    }
+    $columns = [
+        ['users', 'banned', 'TINYINT NOT NULL DEFAULT 0'],
+        ['chats', 'accepted', 'TINYINT NOT NULL DEFAULT 1'],
+        ['chats', 'requested_by', 'INTEGER NOT NULL DEFAULT 0'],
+    ];
+    foreach ($columns as [$table, $col, $def]) {
+        try {
+            $pdo->query("SELECT $col FROM $table LIMIT 1");
+        } catch (PDOException $e) {
+            $pdo->exec("ALTER TABLE $table ADD COLUMN $col $def");
+        }
+    }
+    @file_put_contents($marker, date('c'));
 }
 
 function q(string $sql, array $params = []): PDOStatement
@@ -149,7 +172,7 @@ function current_user(bool $required = true): ?array
         $t = request_token();
         if ($t) {
             $row = one('SELECT t.id AS token_id, t.last_used, u.* FROM tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ?', [hash('sha256', $t)]);
-            if ($row) {
+            if ($row && !(int) ($row['banned'] ?? 0)) {
                 $user = $row;
                 $now = time();
                 if ($now - (int) $row['last_used'] > 300) {

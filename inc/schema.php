@@ -21,6 +21,7 @@ function schema_statements(string $driver): array
             visible_at $int NOT NULL DEFAULT 0,
             privacy VARCHAR(255) NOT NULL DEFAULT '',
             is_admin TINYINT NOT NULL DEFAULT 0,
+            banned TINYINT NOT NULL DEFAULT 0,
             created_at $int NOT NULL DEFAULT 0
         )$tail",
         "CREATE UNIQUE INDEX ux_users_username ON users (username)",
@@ -45,6 +46,8 @@ function schema_statements(string $driver): array
             uniq_key VARCHAR(64) NULL,
             last_message_id $int NOT NULL DEFAULT 0,
             pinned_message_id $int NOT NULL DEFAULT 0,
+            accepted TINYINT NOT NULL DEFAULT 1,
+            requested_by $int NOT NULL DEFAULT 0,
             created_at $int NOT NULL DEFAULT 0,
             updated_at $int NOT NULL DEFAULT 0
         )$tail",

@@ -474,6 +474,12 @@ img { -webkit-user-drag: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .empty-note { text-align: center; color: var(--text2); padding: 30px 20px; line-height: 1.8; }
 
+/* ---------- درخواست گفتگو ---------- */
+.request-box { max-width: 760px; margin: 0 auto; background: var(--bg); border-radius: 16px; box-shadow: var(--shadow); padding: 14px 16px; text-align: center; }
+.request-box .rq-text { line-height: 1.8; color: var(--text); font-size: 15px; }
+.request-box .rq-actions { display: flex; gap: 8px; margin-top: 12px; }
+.request-box .rq-actions .btn { flex: 1; padding: 10px; }
+
 /* ---------- بنر اعلان داخل برنامه ---------- */
 .inapp-banner {
   position: fixed; top: calc(10px + var(--safe-top)); left: 50%; transform: translate(-50%, -150%); width: min(420px, calc(100% - 24px));
