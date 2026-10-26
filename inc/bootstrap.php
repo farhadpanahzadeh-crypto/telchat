@@ -5,6 +5,7 @@ define('APP_ROOT', dirname(__DIR__));
 define('UPLOAD_DIR', APP_ROOT . '/uploads');
 
 require_once __DIR__ . '/webpush.php';
+require_once __DIR__ . '/crypto.php';
 
 class ApiError extends Exception
 {
@@ -62,7 +63,7 @@ function db(): PDO
 /** به‌روزرسانی ساختار دیتابیس نصب‌های قدیمی‌تر (فقط یک بار اجرا می‌شود) */
 function migrate(PDO $pdo): void
 {
-    $marker = APP_ROOT . '/inc/.schema-3';
+    $marker = APP_ROOT . '/inc/.schema-4';
     if (is_file($marker)) {
         return;
     }
@@ -78,6 +79,7 @@ function migrate(PDO $pdo): void
             $pdo->exec("ALTER TABLE $table ADD COLUMN $col $def");
         }
     }
+    $pdo->exec('CREATE TABLE IF NOT EXISTS used_nonces (nonce CHAR(32) NOT NULL PRIMARY KEY, created_at INTEGER NOT NULL DEFAULT 0)');
     @file_put_contents($marker, date('c'));
 }
 
@@ -154,7 +156,7 @@ function base_url(): string
 
 function request_token(): string
 {
-    $t = $_SERVER['HTTP_X_AUTH_TOKEN'] ?? '';
+    $t = $GLOBALS['__token'] ?? ($_SERVER['HTTP_X_AUTH_TOKEN'] ?? '');
     if (!$t) {
         $h = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
         if (stripos($h, 'Bearer ') === 0) {
@@ -214,7 +216,7 @@ function defer(callable $fn): void
 
 function send_json($data, int $status = 200): void
 {
-    $out = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+    $out = seal_response(json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE));
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');

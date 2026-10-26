@@ -22,8 +22,14 @@ try {
     if (stripos($ct, 'application/json') !== false) {
         $in = json_decode((string) file_get_contents('php://input'), true) ?: [];
     }
+    if ((int) ($in['e'] ?? 0) === 1) {
+        $in = open_request($in);
+    } elseif (!empty($_SERVER['HTTP_X_ENC_TOKEN'])) {
+        open_token_header((string) $_SERVER['HTTP_X_ENC_TOKEN']);
+    }
     if (!in_array($action, PUBLIC_ACTIONS, true)) {
         current_user();
+        encrypt_backlog();
     }
     send_json($fn($in));
 } catch (ApiError $e) {

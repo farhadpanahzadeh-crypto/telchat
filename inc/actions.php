@@ -133,7 +133,7 @@ function member_ids(int $chatId): array
 
 function emit(array $userIds, string $type, array $data): void
 {
-    $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $json = enc(json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     $now = time();
     foreach (array_unique($userIds) as $u) {
         insert('events', ['user_id' => (int) $u, 'type' => $type, 'data' => $json, 'created_at' => $now]);
@@ -163,7 +163,7 @@ function message_preview(array $m): string
         return 'پیام حذف شده';
     }
     $labels = ['image' => '🖼 عکس', 'video' => '🎬 ویدیو', 'voice' => '🎤 پیام صوتی', 'audio' => '🎵 فایل صوتی', 'file' => '📎 فایل'];
-    $body = mb_trim(preg_replace('/\s+/u', ' ', (string) $m['body']) ?? '');
+    $body = mb_trim(preg_replace('/\s+/u', ' ', dec($m['body'])) ?? '');
     if (isset($labels[$m['type']])) {
         return $body !== '' ? $labels[$m['type']] . '، ' . $body : $labels[$m['type']];
     }
@@ -236,7 +236,7 @@ function messages_out(array $rows): array
             'user_id' => (int) $m['user_id'],
             'sender' => $u ? ['id' => (int) $u['id'], 'name' => $u['name'], 'avatar' => privacy_of($u)['photo'] === 'all' ? $u['avatar'] : ''] : ['id' => 0, 'name' => 'کاربر حذف شده', 'avatar' => ''],
             'type' => $m['type'],
-            'body' => $m['body'],
+            'body' => dec($m['body']),
             'file' => (int) $m['file_id'] ? file_out($files[(int) $m['file_id']] ?? null) : null,
             'reply_to' => $reply,
             'fwd_name' => $m['fwd_name'],
@@ -348,7 +348,7 @@ function create_message(array $chat, int $userId, array $data): array
         'chat_id' => $chatId,
         'user_id' => $userId,
         'type' => $data['type'] ?? 'text',
-        'body' => $data['body'] ?? '',
+        'body' => enc((string) ($data['body'] ?? '')),
         'file_id' => (int) ($data['file_id'] ?? 0),
         'reply_to_id' => (int) ($data['reply_to_id'] ?? 0),
         'fwd_name' => $data['fwd_name'] ?? '',
@@ -633,7 +633,9 @@ function act_config(array $in): array
         'register_code' => (string) (config('register_code') ?? '') !== '',
         'vapid_public' => config('vapid')['public'] ?? '',
         'max_upload_mb' => (int) config('max_upload_mb'),
-        'chunk_size' => chunk_size(),
+        'chunk_size' => chunk_size() - (crypto_on() ? 1024 : 0),
+        'box_public' => server_public_key(),
+        'now' => time(),
         'reactions' => REACTIONS,
     ];
 }
@@ -1202,7 +1204,7 @@ function act_messages_edit(array $in): array
     if ($body === '' && $m['type'] === 'text') {
         throw new ApiError('empty_message');
     }
-    q('UPDATE messages SET body = ?, edited_at = ? WHERE id = ?', [$body, time(), (int) $m['id']]);
+    q('UPDATE messages SET body = ?, edited_at = ? WHERE id = ?', [enc($body), time(), (int) $m['id']]);
     $msg = message_out_by_id((int) $m['id']);
     emit(member_ids((int) $m['chat_id']), 'message_edit', $msg);
     return ['message' => $msg];
@@ -1277,7 +1279,7 @@ function act_messages_forward(array $in): array
             } elseif ($fwd === '') {
                 $fwd = current_user()['name'];
             }
-            $sent[] = create_message($chat, $me, ['type' => $m['type'], 'body' => $m['body'], 'file_id' => (int) $m['file_id'], 'fwd_name' => $fwd]);
+            $sent[] = create_message($chat, $me, ['type' => $m['type'], 'body' => dec($m['body']), 'file_id' => (int) $m['file_id'], 'fwd_name' => $fwd]);
         }
     }
     return ['messages' => $sent];
@@ -1352,18 +1354,34 @@ function act_messages_search(array $in): array
     if (mb_strlen($qs) < 2) {
         return ['messages' => []];
     }
-    $like = like_pattern($qs);
+    // متن پیام‌ها رمز شده ذخیره می‌شود؛ جستجو پس از رمزگشایی انجام می‌شود
     $me = uid();
     $sql = "SELECT m.* FROM messages m JOIN chat_members cm ON cm.chat_id = m.chat_id AND cm.user_id = ?
-            WHERE m.deleted = 0 AND m.id > cm.cleared_id AND m.type <> 'system' AND m.body LIKE ? ESCAPE '!'
+            WHERE m.deleted = 0 AND m.id > cm.cleared_id AND m.type <> 'system' AND m.body <> ''
             AND NOT EXISTS (SELECT 1 FROM message_hidden h WHERE h.message_id = m.id AND h.user_id = ?)";
-    $p = [$me, $like, $me];
+    $p = [$me, $me];
     if (!empty($in['chat_id'])) {
         $sql .= ' AND m.chat_id = ?';
         $p[] = (int) $in['chat_id'];
     }
-    $rows = all($sql . ' ORDER BY m.id DESC LIMIT 50', $p);
-    return ['messages' => messages_out($rows)];
+    $found = [];
+    $before = PHP_INT_MAX;
+    for ($scanned = 0; $scanned < 20000 && count($found) < 50; $scanned += 1000) {
+        $rows = all($sql . ' AND m.id < ? ORDER BY m.id DESC LIMIT 1000', array_merge($p, [$before]));
+        if (!$rows) {
+            break;
+        }
+        foreach ($rows as $r) {
+            $before = (int) $r['id'];
+            if (mb_stripos(dec($r['body']), $qs) !== false) {
+                $found[] = $r;
+                if (count($found) >= 50) {
+                    break;
+                }
+            }
+        }
+    }
+    return ['messages' => messages_out($found)];
 }
 
 /* ============================== آپلود ============================== */
@@ -1432,6 +1450,12 @@ function act_files_chunk(array $in): array
     $c = $_FILES['chunk'] ?? null;
     if (!$c || ($c['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
         throw new ApiError(($c['error'] ?? 0) === UPLOAD_ERR_INI_SIZE ? 'chunk_too_large' : 'upload_failed');
+    }
+    if (!empty($_POST['cn'])) {
+        // تکه رمز شده است (رمزنگاری انتقال)
+        file_put_contents($c['tmp_name'], open_bytes((string) file_get_contents($c['tmp_name']), (string) $_POST['cn']));
+        clearstatcache();
+        $c['size'] = filesize($c['tmp_name']);
     }
     if ($have + (int) $c['size'] > $total) {
         @unlink($part);
@@ -1502,7 +1526,7 @@ function act_poll(array $in): array
     }
     $out = [];
     foreach ($events as $e) {
-        $out[] = ['id' => (int) $e['id'], 'type' => $e['type'], 'data' => json_decode($e['data'], true)];
+        $out[] = ['id' => (int) $e['id'], 'type' => $e['type'], 'data' => json_decode(dec($e['data']), true)];
         $last = (int) $e['id'];
     }
     return ['last_id' => $last, 'events' => $out, 'presence' => presence($in)];

@@ -518,6 +518,7 @@ const Settings = {
           ${sItem('key', 'تغییر رمز عبور', 'رمز ورود به حساب', 'data-a="password"')}
           ${sItem('devices', 'دستگاه‌های فعال', faNum(data.sessions) + ' دستگاه', 'data-a="devices"')}
           ${sItem('block', 'کاربران مسدود شده', data.blocked.length ? faNum(data.blocked.length) + ' کاربر' : 'هیچ', 'data-a="blocked"')}
+          ${sItem('shield', 'رمزنگاری ارتباط', Sec.enabled ? 'فعال — ' + `<span class="ltr">${esc(Sec.fingerprint())}</span>` : 'غیرفعال (افزونه sodium روی سرور نصب نیست)', 'data-a="crypto"')}
           <div class="s-sep"></div>
           <div class="s-head">حریم خصوصی</div>
           ${sItem('eye', 'آخرین بازدید و آنلاین', '', 'data-k="last_seen"', `<span class="s-val">${PRIV_LABEL[p.last_seen]}</span>`)}
@@ -539,6 +540,9 @@ const Settings = {
           if (a === 'devices') Modal.push(this.devicesPage());
           if (a === 'blocked') Modal.push(this.blockedPage(data.blocked));
           if (a === 'delete') this.deleteAccount();
+          if (a === 'crypto') dialog({ title: 'رمزنگاری', text: Sec.enabled
+            ? 'همه پیام‌ها و اطلاعات بین گوشی شما و سرور با پروتکل NaCl (Curve25519 + XSalsa20-Poly1305) رمز می‌شوند و متن پیام‌ها روی سرور هم رمز شده ذخیره می‌شود. اثر انگشت کلید سرور: ' + Sec.fingerprint() + ' — اگر این کد روی گوشی شما با کد پنل مدیریت یکی باشد، ارتباط شما مستقیم با سرور است.'
+            : 'رمزنگاری فعال نیست. مدیر سرور باید افزونه sodium را در PHP فعال کند.', buttons: [{ text: 'باشه', value: 1 }] });
         };
       },
     };

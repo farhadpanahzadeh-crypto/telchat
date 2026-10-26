@@ -3,7 +3,7 @@ const VERSION = 'telchat-v4';
 const MEDIA = 'telchat-media-v1';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest',
-  'assets/css/app.css?v=4', 'assets/js/icons.js?v=4', 'assets/js/app.js?v=4', 'assets/js/settings.js?v=4',
+  'assets/css/app.css?v=4', 'assets/js/nacl.min.js?v=4', 'assets/js/crypto.js?v=4', 'assets/js/icons.js?v=4', 'assets/js/app.js?v=4', 'assets/js/settings.js?v=4',
   'assets/fonts/Vazirmatn.woff2', 'assets/icons/icon-192.png', 'assets/icons/badge.png',
 ];
 

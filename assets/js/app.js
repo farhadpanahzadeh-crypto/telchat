@@ -119,15 +119,17 @@ const errText = (e) => ERRORS[e?.message] || ERRORS[e] || 'خطا: ' + (e?.messa
 
 const API = {
   base: 'api/index.php?action=',
-  async call(action, data = {}, opts = {}) {
+  async call(action, data = {}, opts = {}, token = App.token, retried = false) {
     let res;
+    const sealed = Sec.enabled && action !== 'config';
     try {
       res = await fetch(this.base + action, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(App.token ? { 'X-Auth-Token': App.token } : {}) },
-        body: JSON.stringify(data),
+        headers: { 'Content-Type': 'application/json', ...(!sealed && token ? { 'X-Auth-Token': token } : {}) },
+        body: JSON.stringify(sealed ? Sec.seal(token, data) : data),
         signal: opts.signal,
         cache: 'no-store',
+        keepalive: !!opts.keepalive,
       });
     } catch (e) {
       if (e.name === 'AbortError') throw e;
@@ -135,6 +137,12 @@ const API = {
     }
     let j;
     try { j = await res.json(); } catch { throw new Error('network'); }
+    if (j.e === 1 && sealed) j = Sec.open(j);
+    if (j.error && /^crypto_/.test(j.error) && !retried) {
+      // کلید یا ساعت سرور عوض شده؛ دوباره دست‌دهی می‌کنیم
+      await App.handshake();
+      return this.call(action, data, opts, token, true);
+    }
     if (j.error) {
       if (j.error === 'unauthorized' && App.token) App.logout(true);
       throw new Error(j.error);
@@ -145,12 +153,14 @@ const API = {
     return new Promise((resolve, reject) => {
       const x = new XMLHttpRequest();
       x.open('POST', this.base + action);
-      x.setRequestHeader('X-Auth-Token', App.token);
+      if (Sec.enabled) x.setRequestHeader('X-Enc-Token', Sec.tokenHeader(App.token));
+      else x.setRequestHeader('X-Auth-Token', App.token);
       x.timeout = 120000;
       x.upload.onprogress = (e) => e.lengthComputable && onProgress && onProgress(e.loaded);
       x.onload = () => {
         try {
-          const j = JSON.parse(x.responseText);
+          let j = JSON.parse(x.responseText);
+          if (j.e === 1 && Sec.enabled) j = Sec.open(j);
           j.error ? reject(Object.assign(new Error(j.error), { final: true })) : resolve(j);
         } catch { reject(new Error(x.status === 413 ? 'file_too_large' : 'network')); }
       };
@@ -160,7 +170,7 @@ const API = {
   },
   upload(file, extra = {}, onProgress = null, action = 'files.upload') {
     const chunk = App.cfg.chunk_size || 1048576;
-    if (action === 'files.upload' && file.size > chunk) return this.uploadChunked(file, extra, onProgress, chunk);
+    if (action === 'files.upload' && (file.size > chunk || Sec.enabled)) return this.uploadChunked(file, extra, onProgress, chunk);
     const fd = new FormData();
     fd.append('file', file, file.name || 'file');
     Object.entries(extra).forEach(([k, v]) => fd.append(k, v));
@@ -178,7 +188,13 @@ const API = {
       fd.append('name', file.name || 'file');
       fd.append('type', file.type || '');
       Object.entries(extra).forEach(([k, v]) => fd.append(k, v));
-      fd.append('chunk', file.slice(offset, offset + chunk), 'chunk');
+      let piece = file.slice(offset, offset + chunk);
+      if (Sec.enabled) {
+        const sealedPiece = Sec.sealBytes(new Uint8Array(await piece.arrayBuffer()));
+        fd.append('cn', sealedPiece.n);
+        piece = new Blob([sealedPiece.c]);
+      }
+      fd.append('chunk', piece, 'chunk');
       try {
         const r = await this.post('files.chunk', fd, (n) => onProgress && onProgress(Math.min(1, (offset + n) / file.size)));
         if (r.file) return r;
@@ -221,12 +237,18 @@ const App = {
         if (e.data?.type === 'open_chat') location.hash = '#/chat/' + e.data.chat_id;
       });
     }
-    try { this.cfg = await API.call('config'); } catch (e) {
+    try { await this.handshake(); } catch (e) {
       if (e.message === 'not_installed') { $('#root').innerHTML = `<div class="empty-note">${ERRORS.not_installed}</div>`; return; }
     }
     if (!this.token) return renderAuth();
     if (window.Settings?.checkLock && !(await Settings.checkLock())) return;
     this.boot();
+  },
+
+  /** دریافت تنظیمات و کلید عمومی سرور و ساخت کلید نشست رمزنگاری */
+  async handshake() {
+    this.cfg = await API.call('config');
+    Sec.init(this.cfg);
   },
 
   async boot() {
@@ -248,7 +270,7 @@ const App = {
     this.pollCtl?.abort();
     if (!expired && t) {
       const send = (s) => {
-        fetch(API.base + 'auth.logout', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json', 'X-Auth-Token': t }, body: JSON.stringify({ endpoint: s?.endpoint || '' }) }).catch(() => {});
+        API.call('auth.logout', { endpoint: s?.endpoint || '' }, { keepalive: true }, t).catch(() => {});
         s?.unsubscribe();
       };
       if (isSecure && navigator.serviceWorker) {

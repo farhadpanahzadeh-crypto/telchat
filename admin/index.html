@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex">
 <title>پنل مدیریت تل‌چت</title>
 <link rel="icon" type="image/png" href="../assets/icons/icon-192.png">
-<link rel="stylesheet" href="../assets/css/app.css?v=3">
+<link rel="stylesheet" href="../assets/css/app.css?v=4">
 <style>
 body { overflow: auto; background: var(--bg2); }
 .adm { display: flex; min-height: 100vh; }
@@ -70,7 +70,9 @@ body { overflow: auto; background: var(--bg2); }
 <body>
 <div id="root"><div class="splash"><img src="../assets/icons/icon-192.png" alt=""></div></div>
 <div id="toast"></div>
-<script src="../assets/js/icons.js?v=3"></script>
+<script src="../assets/js/nacl.min.js?v=4"></script>
+<script src="../assets/js/crypto.js?v=4"></script>
+<script src="../assets/js/icons.js?v=4"></script>
 <script>
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -97,12 +99,21 @@ function toast(t) { const el = $('#toast'); el.textContent = t; el.classList.add
 })();
 
 let token = ls('tc_admin_token') || ls('tc_token');
-async function api(action, data = {}) {
+let handshaken = false;
+async function handshake() {
+  const r = await fetch('../api/index.php?action=config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  Sec.init(await r.json());
+  handshaken = true;
+}
+async function api(action, data = {}, retried = false) {
+  if (!handshaken) await handshake().catch(() => {});
   let r;
   try {
-    r = await fetch('../api/index.php?action=' + action, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { 'X-Auth-Token': token } : {}) }, body: JSON.stringify(data) });
+    r = await fetch('../api/index.php?action=' + action, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(!Sec.enabled && token ? { 'X-Auth-Token': token } : {}) }, body: JSON.stringify(Sec.enabled ? Sec.seal(token, data) : data) });
   } catch { throw new Error('network'); }
-  const j = await r.json().catch(() => ({ error: 'network' }));
+  let j = await r.json().catch(() => ({ error: 'network' }));
+  if (j.e === 1 && Sec.enabled) j = Sec.open(j);
+  if (j.error && /^crypto_/.test(j.error) && !retried) { await handshake(); return api(action, data, true); }
   if (j.error) {
     if (j.error === 'unauthorized' || j.error === 'admin_only') { if (action !== 'auth.login') { ls('tc_admin_token', null); token = null; renderLogin(ERR[j.error] || ''); } }
     throw new Error(j.error);
@@ -178,6 +189,7 @@ async function pageDash() {
         ${card('کل پیام‌ها', fa(s.messages))}${card('پیام‌های امروز', fa(s.messages_today))}${card('گروه‌ها', fa(s.groups))}${card('گفتگوهای خصوصی', fa(s.private_chats))}
         ${card('فایل‌ها', fa(s.files) + ' — ' + fsize(s.files_size), 'sm')}${card('فضای خالی دیسک', fsize(s.disk_free), 'sm')}${card('کاربران مسدود', fa(s.banned))}
         ${card('سرور', 'PHP ' + esc(s.php) + ' — ' + esc(s.db) + (s.https ? ' — https' : ' — http'), 'sm')}
+        ${card('رمزنگاری', Sec.enabled ? '🔒 فعال (NaCl)<br><span class="ltr" style="font-size:13px;color:var(--text2)">' + esc(Sec.fingerprint()) + '</span>' : '⚠ غیرفعال — افزونه sodium در PHP نیست', 'sm')}
       </div>
       <div class="panel"><div class="panel-head"><b>پیام‌های ۱۴ روز اخیر</b></div>
       <div class="chart">${s.daily.map((d) => `<div class="b" title="${fa(d.messages)}"><span>${fa(d.messages)}</span><i style="height:${(d.messages / max) * 100}%"></i>
