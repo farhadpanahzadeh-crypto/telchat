@@ -91,13 +91,32 @@ function userRow(u, extra = '', attrs = '') {
     <div class="u-sub ${isOnline(u.last_seen) ? 'online' : ''}">${esc(st)}</div></div>${extra}</div>`;
 }
 
+/** انتخاب عکس — باید مستقیم داخل رویداد کلیک صدا زده شود (الزام Safari آیفون) */
 function pickImage() {
   return new Promise((resolve) => {
     const i = document.createElement('input');
     i.type = 'file'; i.accept = 'image/*';
-    i.onchange = () => resolve(i.files[0] || null);
+    i.style.cssText = 'position:fixed;left:-1000px;opacity:0';
+    document.body.append(i);
+    i.onchange = () => { resolve(i.files[0] || null); i.remove(); };
     i.click();
   });
+}
+
+/** تبدیل هر عکسی (از جمله HEIC آیفون) به JPEG مربعی برای آواتار */
+async function avatarImage(file) {
+  let src;
+  try { src = await createImageBitmap(file); } catch {
+    src = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('image_unsupported')); im.src = URL.createObjectURL(file); });
+  }
+  const w = src.width || src.naturalWidth, h = src.height || src.naturalHeight;
+  const s = Math.min(w, h), size = Math.min(640, s);
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  cv.getContext('2d').drawImage(src, (w - s) / 2, (h - s) / 2, s, s, 0, 0, size, size);
+  const blob = await new Promise((r) => cv.toBlob(r, 'image/jpeg', 0.9));
+  if (!blob) throw new Error('image_unsupported');
+  return new File([blob], 'avatar.jpg', { type: 'image/jpeg' });
 }
 
 /* ============================== قفل برنامه (رمز محلی) ============================== */
@@ -219,7 +238,9 @@ const Settings = {
     const dark = document.documentElement.dataset.theme === 'dark';
     Modal.open({
       title: App.cfg.app_name || 'تل‌چت',
-      html: `<div class="profile-head">${avatarHtml(me, 'lg')}<div class="p-name">${esc(me.name)}</div><div class="p-status ltr">@${esc(me.username)}</div></div>
+      html: () => `<div class="profile-head"><div class="avatar lg ${App.me.avatar ? '' : 'c' + (me.id % 7)}" data-a="avatar" title="تغییر عکس">${App.me.avatar ? `<img src="${esc(App.me.avatar)}" alt="">` : esc((me.name || '?')[0])}<div class="cam-badge">${icon('camera')}</div></div>
+        <div class="p-name">${esc(me.name)}</div><div class="p-status ltr">@${esc(me.username)}</div>
+        <button class="btn flat" data-a="avatar" style="width:auto;margin-top:6px;padding:6px 14px">${icon('camera')} تغییر عکس پروفایل</button></div>
         <div class="s-sep"></div>
         ${sItem('group', 'گروه جدید', '', 'data-a="group"')}
         ${sItem('contacts', 'مخاطبین', '', 'data-a="contacts"')}
@@ -227,6 +248,8 @@ const Settings = {
         ${sItem('settings', 'تنظیمات', '', 'data-a="settings"')}
         ${sItem('palette', 'حالت شب', '', 'data-a="night"', toggleHtml(dark))}
         ${me.is_admin ? sItem('shield', 'پنل مدیریت', '', 'data-a="admin"') : ''}
+        <div class="s-sep"></div>
+        ${sItem('logout', 'خروج از حساب', '', 'data-a="logout" class="s-item danger"')}
         <div class="s-sep"></div>
         <div class="s-note">${esc(App.cfg.app_name || 'تل‌چت')} — پیام‌رسان روی سرور شخصی شما</div>`,
       mount: (b) => {
@@ -236,6 +259,8 @@ const Settings = {
           if (a === 'contacts') Modal.push(this.contactsPage());
           if (a === 'saved') { Modal.close(); this.openSaved(); }
           if (a === 'admin') window.open('admin/', '_blank');
+          if (a === 'avatar') this.changeAvatar(e);
+          if (a === 'logout') this.confirmLogout();
           if (a === 'settings') Modal.push(this.settingsPage());
           if (a === 'night') {
             e.preventDefault();
@@ -376,6 +401,7 @@ const Settings = {
           <div class="p-name">${esc(me.name)}</div><div class="p-status online">آنلاین</div></div>
           <div class="s-sep"></div>
           <div class="s-head">حساب کاربری</div>
+          ${sItem('camera', 'تغییر عکس پروفایل', '', 'data-a="avatar" style="color:var(--primary)"')}
           ${sItem('at', `<span class="ltr">@${esc(me.username)}</span>`, 'برای تغییر نام کاربری ضربه بزنید', 'data-a="profile"')}
           ${sItem('info', me.bio ? esc(me.bio) : 'بیوگرافی', me.bio ? 'بیوگرافی' : 'چند کلمه درباره خودتان بنویسید', 'data-a="profile"')}
           <div class="s-sep"></div>
@@ -393,7 +419,7 @@ const Settings = {
       mount: (b) => {
         b.onclick = (e) => {
           const a = e.target.closest('[data-a]')?.dataset.a;
-          if (a === 'avatar') this.changeAvatar();
+          if (a === 'avatar') this.changeAvatar(e);
           if (a === 'profile') Modal.push(this.profilePage());
           if (a === 'notif') Modal.push(this.notifPage());
           if (a === 'privacy') Modal.push(this.privacyPage());
@@ -412,21 +438,30 @@ const Settings = {
     if (r) App.logout();
   },
 
-  async changeAvatar() {
-    const choice = App.me.avatar ? await dialog({ title: 'عکس پروفایل', buttons: [{ text: 'انتخاب عکس جدید', value: 'new' }, { text: 'حذف عکس', value: 'del', danger: true }] }) : { value: 'new' };
-    if (!choice) return;
+  /** تغییر عکس پروفایل؛ e رویداد کلیک است تا منو کنار همان نقطه باز شود */
+  changeAvatar(e) {
+    if (!App.me.avatar) { this.uploadAvatar(pickImage()); return; }
+    const x = e?.clientX ?? innerWidth / 2, y = e?.clientY ?? innerHeight / 3;
+    showMenu([
+      { icon: 'camera', text: 'انتخاب عکس جدید', fn: () => this.uploadAvatar(pickImage()) },
+      { icon: 'eye', text: 'مشاهده عکس', fn: () => openViewer(App.me.avatar) },
+      { icon: 'delete', text: 'حذف عکس', danger: true, fn: () => this.uploadAvatar(null) },
+    ], x + 100, y);
+  },
+  async uploadAvatar(picking) {
     try {
       let r;
-      if (choice.value === 'del') r = await API.call('me.avatar');
+      if (!picking) r = await API.call('me.avatar');
       else {
-        const f = await pickImage();
+        const f = await picking;
         if (!f) return;
-        toast('در حال بارگذاری...');
-        r = await API.upload(await compressImage(f), {}, null, 'me.avatar');
+        toast('در حال بارگذاری عکس...');
+        r = await API.upload(await avatarImage(f), {}, null, 'me.avatar');
       }
-      App.me = r.user; store.set('me', r.user);
+      App.me = Object.assign(App.me, r.user); store.set('me', App.me);
+      toast(picking ? 'عکس پروفایل تغییر کرد' : 'عکس پروفایل حذف شد');
       Modal.refresh();
-    } catch (e) { toast(errText(e)); }
+    } catch (er) { toast(er.message === 'image_unsupported' ? 'این نوع عکس پشتیبانی نمی‌شود؛ یک عکس JPG یا PNG انتخاب کنید' : errText(er)); }
   },
 
   profilePage() {
@@ -809,7 +844,7 @@ const Settings = {
             try {
               const r = await API.call('chats.create_group', { title, description: $('[name=desc]', b).value, member_ids: users.map((u) => u.id) });
               let chat = r.chat;
-              if (file) chat = (await API.upload(await compressImage(file), { chat_id: chat.id }, null, 'chats.avatar')).chat;
+              if (file) chat = (await API.upload(await avatarImage(file), { chat_id: chat.id }, null, 'chats.avatar')).chat;
               App.chats.set(chat.id, chat);
               if (users.length && chat.member_count - 1 < users.length) toast('برخی افراد به دلیل تنظیمات حریم خصوصی اضافه نشدند');
               Modal.close();
@@ -976,7 +1011,7 @@ const Settings = {
           const f = await pickImage();
           if (!f) return;
           try {
-            const r = await API.upload(await compressImage(f), { chat_id: c.id }, null, 'chats.avatar');
+            const r = await API.upload(await avatarImage(f), { chat_id: c.id }, null, 'chats.avatar');
             Object.assign(c, r.chat); App.chats.set(c.id, Object.assign(App.chats.get(c.id), r.chat));
             $('[data-av] .avatar', b).outerHTML = avatarHtml(r.chat, 'lg');
             renderChatList(); renderChatHeader();

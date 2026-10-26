@@ -516,3 +516,6 @@ img { -webkit-user-drag: none; }
   .chat-item.active .badge { background: var(--green); color: #fff; }
   .chat-item:active, .s-item:active, .user-row:active { background: var(--hover); }
 }
+.btn .icon { display: inline-block; vertical-align: middle; width: 18px; height: 18px; margin-left: 4px; }
+.profile-head .cam-badge { border-radius: 50%; }
+.profile-head .cam-badge .icon { color: #fff; width: 32px; height: 32px; }
