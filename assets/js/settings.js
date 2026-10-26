@@ -157,13 +157,13 @@ const Settings = {
 
   afterBoot() {
     this.initAutoLock();
-    if (!Native && 'Notification' in window && Notification.permission === 'granted') this.ensurePush(false);
+    if (isSecure && 'Notification' in window && Notification.permission === 'granted') this.ensurePush(false);
   },
 
   /* ---------- بنر نصب برنامه ---------- */
   renderInstallBanner() {
     const el = $('#installBanner');
-    if (!el || isStandalone || Native || store.get('hideInstall')) return;
+    if (!el || isStandalone || store.get('hideInstall')) return;
     const close = `<button class="ibtn" data-x style="width:30px;height:30px">${icon('close')}</button>`;
     if (isIOS) {
       el.innerHTML = `<div class="install-banner"><div style="flex:1">برای نصب روی آیفون: در Safari دکمه <b>Share</b> و سپس <b>Add to Home Screen</b> را بزنید.</div>${close}</div>`;
@@ -171,17 +171,9 @@ const Settings = {
       el.innerHTML = `<div class="install-banner"><div style="flex:1">برنامه را روی دستگاه خود <b>نصب</b> کنید</div><button data-install>نصب</button>${close}</div>`;
       $('[data-install]', el).onclick = async () => { window.__installPrompt.prompt(); await window.__installPrompt.userChoice; window.__installPrompt = null; el.innerHTML = ''; };
     } else if (/Android/i.test(navigator.userAgent)) {
-      this.apkAvailable().then((ok) => {
-        if (!ok) return;
-        el.innerHTML = `<div class="install-banner"><div style="flex:1">برای دریافت اعلان حتی وقتی برنامه بسته است، <b>اپ اندروید</b> را نصب کنید</div><a href="download/telchat.apk"><button>دانلود</button></a>${close}</div>`;
-        $('[data-x]', el).onclick = () => { store.set('hideInstall', 1); el.innerHTML = ''; };
-      });
-      return;
+      el.innerHTML = `<div class="install-banner"><div style="flex:1">برای نصب: در Chrome منوی <b>⋮</b> و سپس <b>Add to Home screen</b> (افزودن به صفحه اصلی) را بزنید.</div>${close}</div>`;
     } else return;
     $('[data-x]', el).onclick = () => { store.set('hideInstall', 1); el.innerHTML = ''; };
-  },
-  async apkAvailable() {
-    try { const r = await fetch('download/telchat.apk', { method: 'HEAD' }); return r.ok; } catch { return false; }
   },
 
   /* ---------- نوتیفیکیشن ---------- */
@@ -218,7 +210,6 @@ const Settings = {
       const reg = await navigator.serviceWorker?.getRegistration();
       (await reg?.getNotifications({ tag: 'chat-' + chatId }))?.forEach((n) => n.close());
     } catch { /* ignore */ }
-    Native?.clearNotifications?.(chatId);
   },
 
   /* ============================== منوی اصلی ============================== */
@@ -392,7 +383,7 @@ const Settings = {
           ${sItem('chat', 'تنظیمات گفتگو', '', 'data-a="chat"')}
           ${sItem('devices', 'دستگاه‌ها', '', 'data-a="devices"')}
           ${sItem('bookmark', 'پیام‌های ذخیره شده', '', 'data-a="saved"')}
-          ${Native ? (Native.changeServer ? sItem('devices', 'تغییر آدرس سرور', '', 'data-a="server"') : '') : sItem('android', 'نصب برنامه روی گوشی', '', 'data-a="install"')}
+          ${sItem('android', 'نصب برنامه روی گوشی', '', 'data-a="install"')}
           <div class="s-sep"></div>
           ${sItem('logout', 'خروج از حساب', '', 'data-a="logout" class="s-item danger"')}
           <div class="s-note" style="text-align:center">${esc(App.cfg.app_name || 'تل‌چت')} نسخه ۱.۰</div>`;
@@ -408,7 +399,6 @@ const Settings = {
           if (a === 'devices') Modal.push(this.devicesPage());
           if (a === 'saved') { Modal.close(); this.openSaved(); }
           if (a === 'install') Modal.push(this.installPage());
-          if (a === 'server') Native.changeServer();
           if (a === 'logout') this.confirmLogout();
         };
       },
@@ -468,26 +458,28 @@ const Settings = {
       title: 'اعلان‌ها و صداها',
       html: async () => {
         let status, sub = '';
-        if (Native) { status = 'فعال (سرویس داخلی اپ اندروید)'; sub = 'اعلان‌ها مستقیم از سرور خودتان دریافت می‌شوند و به اینترنت بین‌الملل نیازی ندارند.'; }
-        else if (!('Notification' in window)) status = isIOS && !isStandalone ? 'ابتدا برنامه را به صفحه اصلی اضافه کنید' : 'پشتیبانی نمی‌شود';
+        if (!isSecure) {
+          status = 'اعلان داخل برنامه (صدا، لرزش و بنر)';
+          sub = 'سایت روی http (بدون SSL) اجرا می‌شود؛ مرورگرها روی http اجازه اعلان سیستمی نمی‌دهند. تا وقتی برنامه باز است، پیام‌های جدید با صدا، لرزش و بنر داخل برنامه اطلاع داده می‌شوند.';
+        } else if (!('Notification' in window)) status = isIOS && !isStandalone ? 'ابتدا برنامه را به صفحه اصلی اضافه کنید' : 'پشتیبانی نمی‌شود';
         else if (Notification.permission === 'granted') {
           let pushOk = false;
           try { pushOk = !!(await (await navigator.serviceWorker.ready).pushManager?.getSubscription()); } catch { /* ignore */ }
           status = 'فعال';
-          sub = pushOk ? 'اعلان‌ها وقتی برنامه باز است از سرور شما و وقتی بسته است از طریق سرویس Push مرورگر می‌رسند.' : 'اعلان‌ها هنگام باز بودن برنامه (حتی در پس‌زمینه) نمایش داده می‌شوند.';
+          sub = pushOk ? 'وقتی برنامه باز است اعلان‌ها مستقیم از سرور شما می‌رسند. وقتی برنامه بسته است، فقط با اینترنت بین‌الملل و از طریق سرویس Push مرورگر می‌رسند.' : 'اعلان‌ها هنگام باز بودن برنامه (حتی در پس‌زمینه) نمایش داده می‌شوند.';
         } else if (Notification.permission === 'denied') status = 'مسدود شده در تنظیمات مرورگر';
         else status = 'غیرفعال';
+        const canEnable = isSecure && 'Notification' in window && Notification.permission === 'default';
         return `<div class="s-head">اعلان‌ها</div>
-          ${sItem('bell', 'وضعیت اعلان‌ها', esc(status), Native || Notification?.permission === 'granted' ? '' : 'data-a="enable"', !Native && window.Notification?.permission !== 'granted' ? '<span class="s-val">فعال‌سازی</span>' : '')}
+          ${sItem('bell', 'وضعیت اعلان‌ها', esc(status), canEnable ? 'data-a="enable"' : '', canEnable ? '<span class="s-val">فعال‌سازی</span>' : '')}
           ${sub ? `<div class="s-note">${sub}</div>` : ''}
           ${sItem('eye', 'نمایش متن پیام', 'نمایش متن پیام در اعلان', 'data-a="preview"', toggleHtml(s.preview))}
-          ${sItem('bell', 'صدای پیام درون برنامه', '', 'data-a="sound"', toggleHtml(s.sound))}
-          ${!Native && 'Notification' in window && Notification.permission === 'granted' ? sItem('send', 'ارسال اعلان آزمایشی', '', 'data-a="test"') : ''}
-          <div class="s-sep"></div>
-          <div class="s-note"><b>نکته درباره قطعی اینترنت بین‌الملل:</b><br>
-          • پیام‌ها همیشه مستقیم با سرور شما رد و بدل می‌شوند و در زمان قطعی اینترنت بین‌الملل هم کار می‌کنند.<br>
-          • اعلان وقتی برنامه کاملاً بسته است در مرورگرها به سرورهای گوگل/اپل وابسته است. برای اعلان مطمئن در اندروید، <b>اپ اندروید</b> را نصب کنید که بدون هیچ سرویس خارجی کار می‌کند.<br>
-          • در آیفون، اپل اجازه اعلان پس‌زمینه بدون سرورهای خودش را نمی‌دهد؛ هنگام قطعی، اعلان‌ها فقط وقتی برنامه باز است نمایش داده می‌شوند.</div>`;
+          ${sItem('bell', 'صدای پیام', '', 'data-a="sound"', toggleHtml(s.sound))}
+          ${isSecure && 'Notification' in window && Notification.permission === 'granted' ? sItem('send', 'ارسال اعلان آزمایشی', '', 'data-a="test"') : ''}
+          ${!isSecure && /Android/i.test(navigator.userAgent) ? `<div class="s-sep"></div><div class="s-note"><b>فعال کردن اعلان سیستمی و میکروفون روی http در اندروید (اختیاری):</b><br>
+            ۱. در Chrome آدرس <span class="ltr">chrome://flags</span> را باز کنید.<br>
+            ۲. عبارت <span class="ltr">Insecure origins treated as secure</span> را جستجو کنید.<br>
+            ۳. آدرس سایت (<span class="ltr">${esc(location.origin)}</span>) را وارد و گزینه را Enabled کنید، سپس Chrome را دوباره باز کنید.</div>` : ''}`;
       },
       mount: (b) => {
         b.onclick = (e) => {
@@ -504,7 +496,6 @@ const Settings = {
             s[a] = !s[a];
             $('input', it).checked = s[a];
             this.saveSettings();
-            Native?.setPreview?.(!!s.preview);
           }
         };
       },
@@ -733,19 +724,14 @@ const Settings = {
   installPage() {
     return {
       title: 'نصب برنامه',
-      html: async () => {
-        const apk = await this.apkAvailable();
-        return `<div class="s-head">اندروید</div>
-          ${apk ? sItem('android', 'دانلود اپ اندروید (APK)', 'پیشنهادی: اعلان‌ها بدون نیاز به اینترنت بین‌الملل', 'data-a="apk"') : ''}
-          <div class="s-note">${window.__installPrompt ? '' : 'در Chrome منوی ⋮ را باز کنید و «Install app» یا «افزودن به صفحه اصلی» را بزنید.'}</div>
-          ${window.__installPrompt ? sItem('download', 'نصب به‌عنوان برنامه (PWA)', '', 'data-a="pwa"') : ''}
+      html: () => `<div class="s-head">اندروید</div>
+          ${window.__installPrompt ? sItem('download', 'نصب برنامه', '', 'data-a="pwa"') : ''}
+          <div class="s-note">۱. سایت را در <b>Chrome</b> باز کنید.<br>۲. منوی <b>⋮</b> (بالای صفحه) را بزنید.<br>۳. گزینه <b>Add to Home screen</b> یا <b>Install app</b> (افزودن به صفحه اصلی) را انتخاب کنید.</div>
           <div class="s-sep"></div><div class="s-head">آیفون و آیپد</div>
-          <div class="s-note">۱. سایت را در <b>Safari</b> باز کنید.<br>۲. دکمه <b>Share</b> (مربع با فلش رو به بالا) را بزنید.<br>۳. گزینه <b>Add to Home Screen</b> را انتخاب کنید.<br>۴. برنامه را از صفحه اصلی باز کنید و از تنظیمات، اعلان‌ها را فعال کنید.</div>`;
-      },
+          <div class="s-note">۱. سایت را در <b>Safari</b> باز کنید.<br>۲. دکمه <b>Share</b> (مربع با فلش رو به بالا) را بزنید.<br>۳. گزینه <b>Add to Home Screen</b> را انتخاب کنید.<br>۴. از این به بعد برنامه را از آیکون صفحه اصلی باز کنید.</div>`,
       mount: (b) => {
         b.onclick = async (e) => {
           const a = e.target.closest('[data-a]')?.dataset.a;
-          if (a === 'apk') location.href = 'download/telchat.apk';
           if (a === 'pwa' && window.__installPrompt) { window.__installPrompt.prompt(); await window.__installPrompt.userChoice; window.__installPrompt = null; Modal.refresh(); }
         };
       },

@@ -1,9 +1,9 @@
 /* Service Worker تل‌چت: کش برنامه برای اجرای سریع و آفلاین + نمایش اعلان */
-const VERSION = 'telchat-v1';
+const VERSION = 'telchat-v2';
 const MEDIA = 'telchat-media-v1';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest',
-  'assets/css/app.css?v=1', 'assets/js/icons.js?v=1', 'assets/js/app.js?v=1', 'assets/js/settings.js?v=1',
+  'assets/css/app.css?v=2', 'assets/js/icons.js?v=2', 'assets/js/app.js?v=2', 'assets/js/settings.js?v=2',
   'assets/fonts/Vazirmatn.woff2', 'assets/icons/icon-192.png', 'assets/icons/badge.png',
 ];
 
@@ -20,7 +20,7 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (url.origin !== location.origin || url.pathname.includes('/api/') || url.pathname.endsWith('.php') || url.pathname.includes('/download/')) return;
+  if (url.origin !== location.origin || url.pathname.includes('/api/') || url.pathname.endsWith('.php')) return;
 
   // فایل‌های آپلود شده: اول از کش (نام فایل‌ها یکتا و غیرقابل تغییر است)
   if (url.pathname.includes('/uploads/')) {

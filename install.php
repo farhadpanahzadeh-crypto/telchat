@@ -21,15 +21,14 @@ function h($s): string
 $checks = [
     'PHP 8.0 یا بالاتر' => version_compare(PHP_VERSION, '8.0.0', '>='),
     'افزونه PDO MySQL یا SQLite' => extension_loaded('pdo_mysql') || extension_loaded('pdo_sqlite'),
-    'افزونه OpenSSL (برای نوتیفیکیشن)' => extension_loaded('openssl') && function_exists('openssl_pkey_derive'),
-    'افزونه cURL (برای نوتیفیکیشن)' => extension_loaded('curl'),
     'افزونه mbstring' => extension_loaded('mbstring'),
     'پوشه inc قابل نوشتن است' => is_writable(ROOT . '/inc'),
     'پوشه uploads قابل نوشتن است' => is_writable(ROOT . '/uploads'),
 ];
 $optional = [
+    'افزونه OpenSSL و cURL (فقط برای Web Push روی https)' => extension_loaded('openssl') && function_exists('openssl_pkey_derive') && extension_loaded('curl'),
     'افزونه GD (برای برش آواتار)' => extension_loaded('gd'),
-    'اتصال HTTPS (الزامی برای نصب روی گوشی و نوتیف)' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https',
+    'اتصال HTTPS (اختیاری — روی http هم کار می‌کند)' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https',
 ];
 
 if (!$installed && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
@@ -52,7 +51,7 @@ if (!$installed && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $adminPass = (string) ($_POST['admin_password'] ?? '');
 
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $errors[] = 'ایمیل معتبر وارد کنید (برای سرویس نوتیفیکیشن لازم است).';
+        $errors[] = 'ایمیل معتبر وارد کنید.';
     }
     if (!preg_match('/^[a-z][a-z0-9_]{3,31}$/', $adminUser)) {
         $errors[] = 'نام کاربری باید با حرف انگلیسی شروع شود و ۴ تا ۳۲ کاراکتر (حروف انگلیسی، عدد، _) باشد.';
@@ -88,8 +87,12 @@ if (!$installed && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                     }
                 }
             }
-            $vapid = vapid_generate();
-            $vapid['subject'] = 'mailto:' . $email;
+            try {
+                $vapid = vapid_generate();
+                $vapid['subject'] = 'mailto:' . $email;
+            } catch (Throwable $e) {
+                $vapid = [];
+            }
 
             $st = $pdo->prepare('SELECT id FROM users WHERE username = ?');
             $st->execute([$adminUser]);
@@ -202,7 +205,7 @@ code{background:#f1f3f5;padding:1px 6px;border-radius:6px;direction:ltr;display:
         <h2>تنظیمات برنامه</h2>
         <label>نام برنامه</label>
         <input name="app_name" class="rtl" value="<?= h($_POST['app_name'] ?? 'تل‌چت') ?>">
-        <label>ایمیل مدیر (برای سرویس نوتیفیکیشن)</label>
+        <label>ایمیل مدیر</label>
         <input name="email" type="email" value="<?= h($_POST['email'] ?? '') ?>">
         <label>حداکثر حجم فایل (مگابایت)</label>
         <input name="max_upload_mb" type="number" value="<?= h($_POST['max_upload_mb'] ?? '50') ?>">

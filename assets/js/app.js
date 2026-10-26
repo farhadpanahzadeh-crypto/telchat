@@ -12,7 +12,8 @@ const isTouch = matchMedia('(pointer: coarse)').matches;
 const isMobile = () => matchMedia('(max-width: 760px)').matches;
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const isStandalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-const Native = window.TelchatAndroid || null; // پل اپ اندروید
+// روی http (بدون SSL) مرورگرها Service Worker، اعلان و میکروفون را مسدود می‌کنند
+const isSecure = window.isSecureContext === true;
 
 const store = {
   get(k, d = null) { try { const v = localStorage.getItem('tc_' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -175,7 +176,7 @@ const App = {
 
   async start() {
     applyTheme();
-    if ('serviceWorker' in navigator && !Native) {
+    if ('serviceWorker' in navigator && isSecure) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
       navigator.serviceWorker.addEventListener('message', (e) => {
         if (e.data?.type === 'open_chat') location.hash = '#/chat/' + e.data.chat_id;
@@ -191,7 +192,6 @@ const App = {
 
   async boot() {
     renderLayout();
-    Native?.setSession?.(location.href.split('#')[0].replace(/index\.html$/, ''), this.token);
     this.pollLoop();
     try {
       const r = await API.call('me.get');
@@ -208,12 +208,14 @@ const App = {
     this.token = null;
     this.pollCtl?.abort();
     if (!expired && t) {
-      navigator.serviceWorker?.ready.then((r) => r.pushManager?.getSubscription()).then((s) => {
-        fetch(API.base + 'auth.logout', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Auth-Token': t }, body: JSON.stringify({ endpoint: s?.endpoint || '' }) });
+      const send = (s) => {
+        fetch(API.base + 'auth.logout', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json', 'X-Auth-Token': t }, body: JSON.stringify({ endpoint: s?.endpoint || '' }) }).catch(() => {});
         s?.unsubscribe();
-      }).catch(() => {});
+      };
+      if (isSecure && navigator.serviceWorker) {
+        navigator.serviceWorker.getRegistration().then((r) => r?.pushManager?.getSubscription()).then(send, () => send(null));
+      } else send(null);
     }
-    Native?.clearSession?.();
     ['token', 'me', 'drafts', 'lock'].forEach((k) => store.del(k));
     location.hash = '';
     location.reload();
@@ -405,10 +407,16 @@ function beep() {
   } catch { /* ignore */ }
 }
 
-/** وقتی برنامه باز است (حتی در پس‌زمینه) اعلان محلی نمایش می‌دهد — بدون نیاز به سرویس خارجی */
+/** اعلان پیام جدید — کاملاً محلی و بدون نیاز به سرویس خارجی */
 function notifyIncoming(chat, m) {
-  if (!document.hidden) { beep(); return; }
-  if (Native || !('Notification' in window) || Notification.permission !== 'granted') return;
+  if (!document.hidden) {
+    beep();
+    navigator.vibrate?.(80);
+    if (App.current !== chat.id) inAppBanner(chat, m);
+    return;
+  }
+  beep();
+  if (!isSecure || !('Notification' in window) || Notification.permission !== 'granted') return;
   const title = chat.type === 'group' ? chat.title : m.sender.name;
   let body = App.settings.preview ? previewOf(m) : 'پیام جدید';
   if (chat.type === 'group' && App.settings.preview) body = m.sender.name + ': ' + body;
@@ -416,6 +424,20 @@ function notifyIncoming(chat, m) {
     body, tag: 'chat-' + chat.id, icon: chat.avatar || 'assets/icons/icon-192.png', badge: 'assets/icons/badge.png',
     data: { chat_id: chat.id }, renotify: true,
   })).catch(() => {});
+}
+
+/** بنر اعلان داخل برنامه (مثل تلگرام) برای پیام گفتگوهای دیگر */
+function inAppBanner(chat, m) {
+  $('.inapp-banner')?.remove();
+  const el = document.createElement('div');
+  el.className = 'inapp-banner';
+  let body = App.settings.preview ? previewOf(m) : 'پیام جدید';
+  if (chat.type === 'group' && App.settings.preview) body = m.sender.name + ': ' + body;
+  el.innerHTML = `${avatarHtml(chat, 'xs')}<div class="ib-body"><div class="ib-title">${esc(chat.title)}</div><div class="ib-text">${esc(body)}</div></div>`;
+  el.onclick = () => { el.remove(); openChat(chat.id); };
+  document.body.append(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 300); }, 4000);
 }
 
 function updateBadge() {
@@ -1479,8 +1501,29 @@ async function sendFiles(files, kind = '') {
 
 /* ---------- ضبط پیام صوتی ---------- */
 let recorder = null, recChunks = [], recStart = 0, recTimer = null, recStream = null;
+/** روی http دسترسی مستقیم به میکروفون ممکن نیست؛ ضبط‌کننده صدای خود گوشی باز می‌شود */
+function recordWithSystemApp() {
+  const i = document.createElement('input');
+  i.type = 'file';
+  i.accept = 'audio/*';
+  i.setAttribute('capture', '');
+  i.onchange = async () => {
+    const f = i.files[0];
+    if (!f) return;
+    f.duration = await new Promise((r) => {
+      const a = new Audio();
+      a.preload = 'metadata';
+      a.onloadedmetadata = () => r(isFinite(a.duration) ? a.duration : 0);
+      a.onerror = () => r(0);
+      a.src = URL.createObjectURL(f);
+    });
+    sendFiles([f], 'voice');
+  };
+  i.click();
+}
+
 async function startRecording() {
-  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { toast('مرورگر شما از ضبط صدا پشتیبانی نمی‌کند'); return; }
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { recordWithSystemApp(); return; }
   try {
     recStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
   } catch { toast('دسترسی به میکروفون داده نشد'); return; }

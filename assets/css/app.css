@@ -474,6 +474,17 @@ img { -webkit-user-drag: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .empty-note { text-align: center; color: var(--text2); padding: 30px 20px; line-height: 1.8; }
 
+/* ---------- بنر اعلان داخل برنامه ---------- */
+.inapp-banner {
+  position: fixed; top: calc(10px + var(--safe-top)); left: 50%; transform: translate(-50%, -150%); width: min(420px, calc(100% - 24px));
+  background: var(--menu-bg); border-radius: 14px; box-shadow: 0 4px 20px rgba(0, 0, 0, .25); display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; z-index: 90; cursor: pointer; transition: transform .3s ease; backdrop-filter: blur(10px);
+}
+.inapp-banner.show { transform: translate(-50%, 0); }
+.inapp-banner .ib-body { min-width: 0; flex: 1; }
+.inapp-banner .ib-title { font-weight: 600; font-size: 15px; }
+.inapp-banner .ib-text { font-size: 14px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 /* ---------- موبایل ---------- */
 @media (max-width: 760px) {
   .sidebar { width: 100%; max-width: none; min-width: 0; border: 0; }

@@ -16,7 +16,6 @@ DirectoryIndex index.html index.php
 
 AddType application/manifest+json .webmanifest
 AddType font/woff2 .woff2
-AddType application/vnd.android.package-archive .apk
 
 <IfModule mod_headers.c>
   Header always set X-Content-Type-Options "nosniff"

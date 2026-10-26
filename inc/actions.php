@@ -1350,67 +1350,6 @@ function act_poll(array $in): array
     return ['last_id' => $last, 'events' => $out, 'presence' => presence($in)];
 }
 
-/**
- * مخصوص سرویس پس‌زمینه اپ اندروید: فقط پیام‌هایی که باید نوتیف شوند را برمی‌گرداند.
- * وضعیت «آنلاین» کاربر را تغییر نمی‌دهد و به هیچ سرویس خارجی وابسته نیست.
- */
-function act_notify_poll(array $in): array
-{
-    $me = uid();
-    $last = (int) ($in['last_id'] ?? -1);
-    $maxId = (int) val('SELECT MAX(id) FROM events WHERE user_id = ?', [$me]);
-    if ($last < 0 || $last > $maxId) {
-        return ['last_id' => $maxId, 'notifications' => [], 'read' => []];
-    }
-    $timeout = max(0, min(50, (int) ($in['wait'] ?? 25)));
-    $start = microtime(true);
-    while (true) {
-        $events = all("SELECT id, type, data FROM events WHERE user_id = ? AND id > ? AND type IN ('message','read','chat_cleared','chat_removed') ORDER BY id LIMIT 200", [$me, $last]);
-        if ($events || microtime(true) - $start >= $timeout || connection_aborted()) {
-            break;
-        }
-        usleep(1000000);
-    }
-    $notes = [];
-    $read = [];
-    $muted = [];
-    $chatInfo = [];
-    foreach ($events as $e) {
-        $last = (int) $e['id'];
-        $d = json_decode($e['data'], true) ?: [];
-        $chatId = (int) ($d['chat_id'] ?? 0);
-        if ($e['type'] !== 'message') {
-            if ($e['type'] !== 'read' || (int) ($d['user_id'] ?? 0) === $me) {
-                $read[] = $chatId;
-            }
-            continue;
-        }
-        if ((int) $d['user_id'] === $me || $d['type'] === 'system') {
-            continue;
-        }
-        if (!isset($muted[$chatId])) {
-            $muted[$chatId] = (int) val('SELECT muted FROM chat_members WHERE chat_id = ? AND user_id = ?', [$chatId, $me]);
-            $chat = one('SELECT type, title, avatar FROM chats WHERE id = ?', [$chatId]);
-            $chatInfo[$chatId] = $chat;
-        }
-        if ($muted[$chatId] || empty($chatInfo[$chatId])) {
-            continue;
-        }
-        $c = $chatInfo[$chatId];
-        $text = str_limit(message_preview(['type' => $d['type'], 'body' => $d['body'], 'deleted' => 0]), 180);
-        $notes[] = [
-            'chat_id' => $chatId,
-            'message_id' => (int) $d['id'],
-            'title' => $c['type'] === 'group' ? $c['title'] : $d['sender']['name'],
-            'sender' => $d['sender']['name'],
-            'body' => $text,
-            'group' => $c['type'] === 'group',
-            'created_at' => (int) $d['created_at'],
-        ];
-    }
-    return ['last_id' => $last, 'notifications' => $notes, 'read' => array_values(array_unique($read)), 'unread' => unread_total($me)];
-}
-
 function presence(array $in): array
 {
     $ids = array_slice(int_ids($in['watch'] ?? []), 0, 100);
